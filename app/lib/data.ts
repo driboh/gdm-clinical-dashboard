@@ -1,0 +1,4 @@
+export type Reading={date:string;fasting:number;breakfast:number;lunch:number;dinner:number;notes?:string};
+export type Patient={name:string;mrn:string;dob:string;edd:string;classification:string;referringOb:string;targets:{fasting:number;oneHour:number;twoHour:number};glucose:Reading[]};
+export const demo:Patient={name:"Sarah Cohen",mrn:"DEMO-001",dob:"1993-05-12",edd:"2026-10-21",classification:"A1GDM",referringOb:"Dr. Elena Martinez",targets:{fasting:95,oneHour:140,twoHour:120},glucose:[
+{date:"2026-08-11",fasting:97,breakfast:126,lunch:119,dinner:132},{date:"2026-08-12",fasting:96,breakfast:131,lunch:124,dinner:138},{date:"2026-08-13",fasting:92,breakfast:128,lunch:118,dinner:142},{date:"2026-08-14",fasting:99,breakfast:135,lunch:121,dinner:136},{date:"2026-08-15",fasting:98,breakfast:129,lunch:127,dinner:145},{date:"2026-08-16",fasting:94,breakfast:133,lunch:120,dinner:137},{date:"2026-08-17",fasting:96,breakfast:130,lunch:123,dinner:139}]};
