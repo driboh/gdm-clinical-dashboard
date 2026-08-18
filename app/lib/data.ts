@@ -2,7 +2,8 @@ export type Patient={id:string;firstName:string;lastName:string;mrn:string;dob:s
 export type Reading={id:string;patientId:string;date:string;fasting:number|null;breakfast:number|null;lunch:number|null;dinner:number|null;notes:string};
 export type Medication={id:string;patientId:string;name:string;type:string;dose:string;frequency:string;startDate:string;stopDate?:string;status:"Active"|"Discontinued";associatedVisitId?:string;history:string[]};
 export type Visit={id:string;patientId:string;date:string;type:string;gestationalAge:string;classification:string;control:string;provider:string;status:"Draft"|"Finalized"|"Amended";intervalHistory:string;maternalFindings:string;assessment:string;plan:string;medicationChanges:string;followUp:string;nextFollowUp:string;summary:string;glucosePeriod?:string;glucoseStart?:string;glucoseEnd?:string;glucoseReviewDate?:string;dietAdherence?:string;activity?:string;originalNote?:string;amendments?:{date:string;text:string;amendedBy?:string;reason?:string}[]};
-export type Report={id:string;patientId:string;visitId?:string;date:string;type:string;status:string};
+export type ReportSnapshot={patient:Patient;visit?:Visit;readings:Reading[];medications:Medication[];settings:Settings;generatedAt:string};
+export type Report={id:string;patientId:string;visitId?:string;date:string;type:string;status:string;generatedBy?:string;fileName?:string;snapshot?:ReportSnapshot};
 export type Settings={providerName:string;credentials:string;displayName:string;role:string;practice:string;npi:string;phone:string;fax:string;signature?:string;fastingTarget:number;oneHourTarget:number;twoHourTarget:number;monitoring:"1 hour"|"2 hour";sites:string;defaultFollowUp:string};
 export type AppData={patients:Patient[];readings:Reading[];medications:Medication[];visits:Visit[];reports:Report[];settings:Settings};
 
