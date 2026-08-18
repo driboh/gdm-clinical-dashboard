@@ -22,6 +22,7 @@
 # misc
 .DS_Store
 *.pem
+*.local
 
 # debug
 npm-debug.log*
@@ -31,9 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
+
+# local OpenAI Sites metadata (not required by Vercel)
+/.openai/
+
+# local prototype exports and signature/test files
+/backups/
+gdm-prototype-backup-*.json
 
 /dist/
 /.wrangler/
