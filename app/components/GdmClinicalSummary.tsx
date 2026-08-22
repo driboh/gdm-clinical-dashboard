@@ -1,0 +1,11 @@
+import {ClinicalSummaryData} from "../lib/data";
+
+export function GdmClinicalSummary({summary}:{summary:ClinicalSummaryData}){
+ const changed=summary.medicationChange&&summary.medicationChange!=="None";
+ const rows=summary.visitKind==="Initial"?[
+  ["Gestational Age",summary.gestationalAge,true],["GDM Classification",summary.classification,true],["Reason for Referral / Diagnosis",summary.reason,false],["Current Therapy",summary.therapy,true],["Glucose Status",summary.pattern,true],["Primary Clinical Impression",summary.impression,false]
+ ]:[
+  ["Gestational Age",summary.gestationalAge,true],["GDM Classification",summary.classification,true],["Current Therapy",summary.therapy,true],["Glucose Review Period",summary.reviewPeriod,false],["Key Glucose Pattern",summary.pattern,true],["Fasting",summary.fasting,false],["Breakfast",summary.breakfast,false],["Lunch",summary.lunch,false],["Dinner",summary.dinner,false],["Overall Control",summary.overallControl,false]
+ ];
+ return <section className="gdm-clinical-summary no-break"><div className="clinical-summary-head"><h2>GDM CLINICAL SUMMARY</h2><span>{summary.visitKind} visit</span></div><div className="clinical-summary-grid">{rows.filter(([,v])=>v).map(([label,value,emphasis])=><div className={emphasis?"emphasis":""} key={String(label)}><small>{label}</small><b>{value}</b></div>)}</div>{summary.plan.length>0&&<div className="clinical-summary-plan"><small>Plan Today</small><ul>{summary.plan.map((x,i)=><li key={i}>{x}</li>)}</ul></div>}<div className="clinical-summary-footer"><div className={changed?"med-change-summary":""}><small>{changed?"MEDICATION CHANGE TODAY":"Medication Change Today"}</small><b>{summary.medicationChange||"None"}</b></div>{summary.nextFollowUp&&<div><small>Next Follow-Up</small><b>{summary.nextFollowUp}</b></div>}</div><p className="clinical-review-note">Clinical summary is decision support only; treatment decisions remain clinician-entered and approved.</p></section>
+}
