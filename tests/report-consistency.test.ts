@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {buildReportModel,maternalLine,validateVisitConsistency} from "../app/lib/reportModel.ts";
+import {buildClinicalSummary,reportPlanItems} from "../app/lib/reportSummary.ts";
 import {applyRegimenChange,formatMedicationChange,parseRecordedMedicationChange,repairLegacyMockVisitChronology,snapshotActiveTherapy,updateActiveMedicationList} from "../app/lib/medicationTimeline.ts";
 import type {Medication,Patient,Reading,Settings,Visit} from "../app/lib/data.ts";
 
@@ -57,4 +58,21 @@ test("legacy chronology is never guessed when the prior regimen is absent",()=>{
  assert.equal(parseRecordedMedicationChange("Increase Basaglar to 7 units QHS"),undefined);
  const ambiguous={...visit,type:"Follow-Up",currentMedication:{medication:"Basaglar",dose:"7",units:"units",timing:"QAM"},medicationChanges:"Increase Basaglar to 7 units QHS"};
  assert.deepEqual(repairLegacyMockVisitChronology(ambiguous,patient,settings.displayName),ambiguous);
+});
+
+test("initial A1GDM report uses proportionate glucose wording and a diet-specific plan",()=>{
+ const mildBreakfast:Reading[]=readings.map((reading,index)=>({...reading,fasting:90,breakfast:[142,141,125,126,127,128][index],lunch:120,dinner:125}));
+ const initial={...visit,currentTherapy:"Diet controlled",plan:"Continue current therapy; Reinforce carbohydrate distribution",glucosePattern:"Recurrent post-breakfast elevations"};
+ const model=buildReportModel(patient,initial,mildBreakfast,[],settings),clinical=buildClinicalSummary(patient,initial,[],model.stats,"7"),plans=reportPlanItems(patient,initial);
+ assert.equal(model.classification,"A1GDM — diet controlled");assert.equal(model.stats.breakfast.above,2);assert.equal(model.stats.breakfast.pct,33);
+ assert.equal(model.pattern,"Intermittent post-breakfast elevations; otherwise predominantly at goal");assert.equal(clinical.pattern,model.pattern);
+ assert.ok(plans.includes("Continue diet and lifestyle management"));assert.ok(!plans.includes("Continue current therapy"));
+});
+
+test("follow-up report fills presentation, change, updated regimen, and actual medication plan",()=>{
+ const change={medication:"Basaglar",from:{medication:"Basaglar",dose:"5",units:"units",timing:"QHS"},to:{medication:"Basaglar",dose:"7",units:"units",timing:"QHS"},reason:"Persistent fasting hyperglycemia"};
+ const followUp={...visit,type:"Follow-Up",classification:"A2GDM",currentTherapy:"Insulin",therapyAtStart:[change.from],therapyAfterVisit:undefined,medicationChangeDetails:[change],currentMedication:change.from,newMedication:undefined,medicationChanges:formatMedicationChange(change),plan:"Titrate insulin"};
+ const model=buildReportModel({...patient,classification:"A2GDM",therapy:"Basaglar 7 units QHS"},followUp,readings,[],settings),clinical=buildClinicalSummary({...patient,classification:"A2GDM",therapy:"Basaglar 7 units QHS"},followUp,[],model.stats,"7");
+ assert.equal(model.therapyLabel,"Therapy on Presentation");assert.equal(model.currentTherapy,"Basaglar 5 units QHS");assert.equal(model.newTherapy,"Basaglar 7 units QHS");assert.doesNotMatch(model.summary,/Updated regimen:\s*\./);
+ assert.equal(clinical.therapyLabel,"Therapy on Presentation");assert.equal(clinical.updatedTherapy,"Basaglar 7 units QHS");assert.equal(clinical.medicationChange,"Basaglar: 5 units QHS → 7 units QHS");assert.ok(clinical.plan.includes("Increase Basaglar from 5 units QHS to 7 units QHS"));assert.doesNotMatch(`${model.summary} ${clinical.updatedTherapy}`,/QAM/);
 });
