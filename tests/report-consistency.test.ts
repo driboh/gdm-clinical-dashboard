@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {buildReportModel,maternalLine,validateVisitConsistency} from "../app/lib/reportModel.ts";
-import {applyRegimenChange,formatMedicationChange,snapshotActiveTherapy,updateActiveMedicationList} from "../app/lib/medicationTimeline.ts";
+import {applyRegimenChange,formatMedicationChange,parseRecordedMedicationChange,repairLegacyMockVisitChronology,snapshotActiveTherapy,updateActiveMedicationList} from "../app/lib/medicationTimeline.ts";
 import type {Medication,Patient,Reading,Settings,Visit} from "../app/lib/data.ts";
 
 const settings:Settings={providerName:"Daniel Riboh",credentials:"PA-C",displayName:"Daniel Riboh, PA-C",role:"GDM Management",practice:"",npi:"",phone:"",fax:"",fastingTarget:95,oneHourTarget:140,twoHourTarget:120,monitoring:"1 hour",sites:"Main",defaultFollowUp:"1 week"};
@@ -42,4 +42,19 @@ test("medication chronology preserves presentation, change, updated regimen, and
  updateActiveMedicationList(afterFirst,patient.id,"visit-3","2026-08-24",secondChange,settings.displayName);
  const historical=buildReportModel(patient,followUp,followUpReadings,[],settings);
  assert.equal(historical.currentTherapy,"Basaglar 5 units QHS");assert.equal(historical.newTherapy,"Basaglar 7 units QHS");
+});
+
+test("legacy mock visit is repaired from explicit history as Version 2 without changing Version 1",()=>{
+ const legacy:Visit={...visit,id:"legacy-follow-up",type:"Follow-Up",classification:"A2GDM",currentTherapy:"Basaglar 7 units QAM",currentMedication:{medication:"Basaglar",dose:"7",units:"units",timing:"QAM"},newMedication:{medication:"Basaglar",dose:"7",units:"units",timing:"QAM"},medicationChanges:"Basaglar; Previous: 5; New: 7; Timing: QHS; Reason: Persistent fasting hyperglycemia"};
+ const repaired=repairLegacyMockVisitChronology(legacy,patient,settings.displayName,"2026-08-23T12:00:00.000Z");
+ assert.equal(repaired.version,2);assert.equal(repaired.status,"Refinalized");assert.equal(repaired.versions?.[0].version,1);assert.match(repaired.versions?.[0].snapshot||"",/QAM/);
+ assert.equal(repaired.currentTherapy,"Basaglar 5 units QHS");assert.equal(repaired.therapyAtStart?.[0].dose,"5");assert.equal(repaired.therapyAtStart?.[0].timing,"QHS");assert.equal(repaired.therapyAfterVisit?.[0].dose,"7");assert.equal(repaired.therapyAfterVisit?.[0].timing,"QHS");
+ const model=buildReportModel({...patient,classification:"A2GDM",therapy:"Basaglar 7 units QHS"},repaired,readings,[],settings);
+ assert.equal(model.currentTherapy,"Basaglar 5 units QHS");assert.equal(model.medicationChange,"Basaglar: 5 units QHS → 7 units QHS");assert.equal(model.newTherapy,"Basaglar 7 units QHS");assert.doesNotMatch(`${model.currentTherapy} ${model.medicationChange} ${model.newTherapy}`,/QAM/);
+});
+
+test("legacy chronology is never guessed when the prior regimen is absent",()=>{
+ assert.equal(parseRecordedMedicationChange("Increase Basaglar to 7 units QHS"),undefined);
+ const ambiguous={...visit,type:"Follow-Up",currentMedication:{medication:"Basaglar",dose:"7",units:"units",timing:"QAM"},medicationChanges:"Increase Basaglar to 7 units QHS"};
+ assert.deepEqual(repairLegacyMockVisitChronology(ambiguous,patient,settings.displayName),ambiguous);
 });
