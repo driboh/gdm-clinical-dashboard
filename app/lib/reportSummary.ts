@@ -1,6 +1,7 @@
 import {ClinicalSummaryData,Medication,Patient,Visit} from "./data";
 import {analyze,fmt,gestationAt} from "./clinical";
 import {regimenText} from "./reportModel";
+import {formatMedicationChange,formatTherapy} from "./medicationTimeline.ts";
 
 type Stats=ReturnType<typeof analyze>;
 
@@ -18,18 +19,18 @@ function medicationText(meds:Medication[],fallback:string){const active=meds.fil
 function planItems(v?:Visit){return (v?.plan||"").split(";").map(x=>x.trim()).filter(Boolean).slice(0,5)}
 
 export function buildClinicalSummary(p:Patient,v:Visit|undefined,meds:Medication[],stats:Stats,period:string):ClinicalSummaryData{
- const initial=!v||v.type==="Initial GDM Consultation",hasData=stats.total>0,pattern=patternFor(stats),medChange=!v?.medicationChanges||/^(none|no medication)/i.test(v.medicationChanges)?"None":v.medicationChanges;
+ const initial=!v||v.type==="Initial GDM Consultation",hasData=stats.total>0,pattern=v?.glucosePattern||patternFor(stats),medChange=!v?.medicationChanges||/^(none|no medication)/i.test(v.medicationChanges)?"None":v.medicationChanges;
  const plans=planItems(v);
  return {
   visitKind:initial?"Initial":"Follow-Up",
-  gestationalAge:gestationAt(p.edd,v?.date||new Date().toISOString().slice(0,10)),classification:v?.classification==="A1GDM"&&(v.currentTherapy||p.therapy).toLowerCase().includes("diet")?"A1GDM — diet controlled":v?.classification==="A2GDM"?"A2GDM — medication controlled":v?.classification||p.classification,
+  gestationalAge:gestationAt(p.edd,v?.date||new Date().toISOString().slice(0,10)),classification:v?.classification==="A1GDM"&&(v.currentTherapy||p.therapy).toLowerCase().includes("diet")?"A1GDM — diet controlled":v?.classification==="A2GDM"?"A2GDM — medication treated":v?.classification||p.classification,
   reason:initial?(p.diagnosisTiming||`Newly diagnosed gestational diabetes after abnormal diagnostic testing${p.diagnosisDate?` on ${fmt(p.diagnosisDate)}`:""}.`):"",
-  therapy:regimenText(v?.currentMedication)||medicationText(meds,v?.currentTherapy||p.therapy),reviewPeriod:period==="custom"?"Custom date range":`Last ${period} days`,
+  therapy:v?.therapyAtStart?.length?formatTherapy(v.therapyAtStart):regimenText(v?.currentMedication)||medicationText(meds,v?.currentTherapy||p.therapy),therapyLabel:v?.medicationChangeDetails?.length?"Therapy on Presentation":"Current Therapy",updatedTherapy:v?.medicationChangeDetails?.length&&v.therapyAfterVisit?.length?formatTherapy(v.therapyAfterVisit):"",reviewPeriod:period==="custom"?"Custom date range":`Last ${period} days`,
   pattern:initial?(hasData?pattern:"Newly starting home glucose monitoring"):pattern,
   fasting:mealLine(stats,"fasting"),breakfast:mealLine(stats,"breakfast"),lunch:mealLine(stats,"lunch"),dinner:mealLine(stats,"dinner"),
   overallControl:hasData?`${stats.atGoal}% of readings at goal`:"",
   impression:initial?(v?.assessment||"Appropriate for clinician-directed nutrition therapy and home glucose monitoring."):"",
   plan:plans.length?plans:(initial?["Begin fasting and postprandial glucose monitoring","Reinforce GDM diet and carbohydrate distribution","Encourage post-meal activity as obstetrically appropriate"]:[]),
-  medicationChange:medChange,nextFollowUp:v?.nextFollowUp?fmt(v.nextFollowUp):(v?.followUp||(p.nextFollowUp?fmt(p.nextFollowUp):""))
+  medicationChange:v?.medicationChangeDetails?.length?formatMedicationChange(v.medicationChangeDetails[0]):medChange,nextFollowUp:v?.nextFollowUp?fmt(v.nextFollowUp):(v?.followUp||(p.nextFollowUp?fmt(p.nextFollowUp):""))
  };
 }

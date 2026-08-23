@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {buildReportModel,maternalLine,validateVisitConsistency} from "../app/lib/reportModel.ts";
+import {applyRegimenChange,formatMedicationChange,snapshotActiveTherapy,updateActiveMedicationList} from "../app/lib/medicationTimeline.ts";
 import type {Medication,Patient,Reading,Settings,Visit} from "../app/lib/data.ts";
 
 const settings:Settings={providerName:"Daniel Riboh",credentials:"PA-C",displayName:"Daniel Riboh, PA-C",role:"GDM Management",practice:"",npi:"",phone:"",fax:"",fastingTarget:95,oneHourTarget:140,twoHourTarget:120,monitoring:"1 hour",sites:"Main",defaultFollowUp:"1 week"};
@@ -19,3 +20,26 @@ test("D: report finalization flags, signature, and footer are mutually consisten
 test("E: maternal findings render each measurement once",()=>{const line=maternalLine(patient,visit);for(const token of ["Weight 145 lb","BP 119/81","HR 77","Edema: None"])assert.equal(line.split(token).length-1,1);assert.equal((line.match(/(?:^| · )Weight 145 lb(?: · |$)/g)||[]).length,1)});
 
 test("finalization validation reports material inconsistencies",()=>{const warnings=validateVisitConsistency(patient,{...visit,assessment:"",plan:""},[],[] as Medication[],settings);assert.ok(warnings.some(x=>x.includes("Gestational age")));assert.ok(warnings.some(x=>x.includes("No glucose")));assert.ok(warnings.some(x=>x.includes("Assessment")));assert.ok(warnings.some(x=>x.includes("Plan")));assert.ok(warnings.some(x=>x.includes("duplicated")))});
+
+test("medication chronology preserves presentation, change, updated regimen, and next-visit start",()=>{
+ const active:Medication[]=[{id:"basaglar-5",patientId:patient.id,name:"Basaglar",type:"Insulin",dose:"5",units:"units",frequency:"QHS",startDate:"2026-08-01",status:"Active",history:[]}];
+ const therapyAtStart=snapshotActiveTherapy(active,patient.id);
+ const change={medication:"Basaglar",from:{...therapyAtStart[0]},to:{...therapyAtStart[0],dose:"7"},reason:"Persistent fasting hyperglycemia"};
+ const therapyAfterVisit=applyRegimenChange(therapyAtStart,change);
+ const followUpReadings:Reading[]=Array.from({length:6},(_,i)=>({id:`f${i}`,patientId:patient.id,date:`2026-08-${10+i}`,fasting:[96,97,98,99,100,101][i],breakfast:[120,121,122,123,124,125][i],lunch:[141,142,130,131,132,133][i],dinner:[141,142,143,144,130,131][i],notes:""}));
+ const followUp:Visit={...visit,type:"Follow-Up",classification:"A2GDM",therapyAtStart,therapyAfterVisit,medicationChangeDetails:[change],currentMedication:therapyAtStart[0],newMedication:therapyAfterVisit[0],medicationChanges:`${formatMedicationChange(change)}; Reason: ${change.reason}`,glucoseSnapshot:followUpReadings,glucosePattern:"Mixed fasting and postprandial elevations"};
+ const model=buildReportModel({...patient,classification:"A2GDM",therapy:"Basaglar 7 units QHS"},followUp,followUpReadings,active,settings);
+ assert.equal(model.classification,"A2GDM — medication treated");
+ assert.equal(model.therapyLabel,"Therapy on Presentation");
+ assert.equal(model.currentTherapy,"Basaglar 5 units QHS");
+ assert.equal(model.medicationChange,"Basaglar: 5 units QHS → 7 units QHS");
+ assert.equal(model.newTherapy,"Basaglar 7 units QHS");
+ assert.equal(model.stats.fasting.above,6);assert.equal(model.stats.breakfast.above,0);assert.equal(model.stats.lunch.above,2);assert.equal(model.stats.dinner.above,4);assert.equal(model.stats.atGoal,50);
+ assert.doesNotMatch(`${model.currentTherapy} ${model.medicationChange} ${model.newTherapy} ${model.assessment} ${model.summary}`,/QAM|medication controlled/);
+ const afterFirst=updateActiveMedicationList(active,patient.id,followUp.id,followUp.date,change,settings.displayName);
+ assert.equal(snapshotActiveTherapy(afterFirst,patient.id)[0].dose,"7");
+ const nextStart=snapshotActiveTherapy(afterFirst,patient.id),secondChange={...change,from:{...nextStart[0]},to:{...nextStart[0],dose:"9"}};
+ updateActiveMedicationList(afterFirst,patient.id,"visit-3","2026-08-24",secondChange,settings.displayName);
+ const historical=buildReportModel(patient,followUp,followUpReadings,[],settings);
+ assert.equal(historical.currentTherapy,"Basaglar 5 units QHS");assert.equal(historical.newTherapy,"Basaglar 7 units QHS");
+});

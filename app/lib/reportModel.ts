@@ -1,5 +1,6 @@
 import type {Medication,MedicationRegimen,Patient,Reading,Settings,Visit} from "./data.ts";
 import {analyze,bmi,fmt,gestationAt} from "./clinical.ts";
+import {formatMedicationChange,formatTherapy} from "./medicationTimeline.ts";
 
 export type ReportModel=ReturnType<typeof buildReportModel>;
 
@@ -21,11 +22,12 @@ function activeMedicationText(medications:Medication[]){
  return active.map(m=>[m.name,m.dose,m.units,m.frequency].filter(Boolean).join(" ").replace(/\bunits units\b/i,"units")).join("; ");
 }
 
-function patternFor(stats:ReturnType<typeof analyze>){
+function patternFor(stats:ReturnType<typeof analyze>,threshold:number){
  if(stats.hypo)return "Recurrent hypoglycemia";
- const post=( ["breakfast","lunch","dinner"] as const).filter(k=>stats[k].count&&stats[k].pct>=30);
- if(stats.fasting.count&&stats.fasting.pct>=30)return post.length?"Mixed fasting and postprandial elevations":"Persistent fasting elevations";
- if(post.length)return post.length===1?`Recurrent post-${post[0]} elevations`:"Recurrent postprandial elevations";
+ const post=( ["breakfast","lunch","dinner"] as const).filter(k=>stats[k].count&&stats[k].pct>=threshold);
+ if(stats.fasting.count&&stats.fasting.pct>=threshold)return post.length?"Mixed fasting and postprandial elevations":"Persistent fasting elevations";
+ if(post.length)return post.length===1?`Post-${post[0]} elevations`:"Postprandial elevations";
+ if(stats.fasting.above)return "Fasting elevations noted";
  return stats.total?"Values predominantly within target":"No glucose readings available";
 }
 
@@ -33,7 +35,7 @@ function classificationText(patient:Patient,visit?:Visit){
  const classification=visit?.classification||patient.classification;
  const therapy=(visit?.currentTherapy||patient.therapy||"").toLowerCase();
  if(classification==="A1GDM"&&therapy.includes("diet"))return "A1GDM — diet controlled";
- if(classification==="A2GDM")return "A2GDM — medication controlled";
+ if(classification==="A2GDM")return "A2GDM — medication treated";
  return classification;
 }
 
@@ -60,19 +62,19 @@ export function buildReportModel(patient:Patient,visit:Visit|undefined,readings:
  const gestationalAge=gestationAt(patient.edd,visitDate);
  const stats=analyze(readings,settings);
  const statements=Object.fromEntries(keys.map(key=>[key,readingStatement(stats,key)])) as Record<typeof keys[number],string>;
- const currentTherapy=regimenText(visit?.currentMedication)||activeMedicationText(medications)||visit?.currentTherapy||patient.therapy||"Diet controlled — no medication";
- const newTherapy=regimenText(visit?.newMedication);
- const medicationChange=newTherapy?`Increase ${newTherapy.replace(/^([^ ]+)\s+/,"$1 to ")}`:(!visit?.medicationChanges||/^(none|no medication)/i.test(visit.medicationChanges)?"None":visit.medicationChanges);
+ const currentTherapy=visit?.therapyAtStart?.length?formatTherapy(visit.therapyAtStart):regimenText(visit?.currentMedication)||(!visit?activeMedicationText(medications):"")||visit?.currentTherapy||patient.therapy||"Diet controlled — no medication";
+ const newTherapy=visit?.therapyAfterVisit?.length?formatTherapy(visit.therapyAfterVisit):regimenText(visit?.newMedication);
+ const structuredChange=visit?.medicationChangeDetails?.[0],medicationChange=structuredChange?formatMedicationChange(structuredChange):newTherapy?`Increase ${newTherapy.replace(/^([^ ]+)\s+/,"$1 to ")}`:(!visit?.medicationChanges||/^(none|no medication)/i.test(visit.medicationChanges)?"None":visit.medicationChanges);
  const classification=classificationText(patient,visit);
- const pattern=patternFor(stats);
+ const pattern=visit?.glucosePattern||patternFor(stats,settings.patternThresholdPct??30);
  const glucoseText=keys.map(key=>statements[key]).join("; ")+`.`;
- const assessment=`${classification} at ${gestationalAge}. ${glucoseText} Pattern: ${pattern}.`;
- const summary=`${gestationalAge} G${patient.gravida}P${patient.para} with ${classification}. ${glucoseText} Current therapy: ${currentTherapy}.${medicationChange!=="None"?` Medication change today: ${medicationChange}.`:""}`;
+ const assessment=`${gestationalAge} G${patient.gravida}P${patient.para} with ${classification}${currentTherapy?` on ${currentTherapy}`:""}. ${glucoseText} Overall, ${stats.atGoal}% of readings are within target. Pattern: ${pattern}.`;
+ const summary=`${gestationalAge} G${patient.gravida}P${patient.para} with ${classification} on ${currentTherapy} at presentation. ${glucoseText}${medicationChange!=="None"?` ${medicationChange.replace(": "," increased from ").replace(" → "," to ")} today. Updated regimen: ${newTherapy}.`:""} Follow-up: ${visit?.followUp||"as documented"}.`;
  const isDraft=!visit||visit.status==="Draft"||visit.status==="Editing Finalized Visit";
  const isRevised=Boolean(visit?.version&&visit.version>1)||visit?.status==="Refinalized";
  const isFinalized=!isDraft;
  const footerText=isFinalized?"Finalized clinical documentation. Clinical decision support only.":"Draft clinical documentation. Not yet finalized by the treating clinician.";
- return {visitDate,gestationalAge,stats,statements,currentTherapy,newTherapy,medicationChange,classification,pattern,glucoseText,assessment,summary,maternalFindings:maternalLine(patient,visit),isDraft,isFinalized,isRevised,showSignature:isFinalized,footerText,finalizedAt:visit?.finalizedAt,originalFinalizedAt:visit?.originalFinalizedAt,revisionReason:visit?.revisionReason,version:visit?.version||1,followUp:visit?.nextFollowUp?fmt(visit.nextFollowUp):visit?.followUp||""};
+ return {visitDate,gestationalAge,stats,statements,currentTherapy,newTherapy,therapyLabel:medicationChange!=="None"?"Therapy on Presentation":"Current Therapy",medicationChange,classification,pattern,glucoseText,assessment,summary,maternalFindings:maternalLine(patient,visit),isDraft,isFinalized,isRevised,showSignature:isFinalized,footerText,finalizedAt:visit?.finalizedAt,originalFinalizedAt:visit?.originalFinalizedAt,revisionReason:visit?.revisionReason,version:visit?.version||1,followUp:visit?.nextFollowUp?fmt(visit.nextFollowUp):visit?.followUp||""};
 }
 
 export function validateVisitConsistency(patient:Patient,visit:Visit,readings:Reading[],medications:Medication[],settings:Settings){
