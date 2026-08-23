@@ -1,7 +1,8 @@
-import {Patient,Reading,Settings} from "./data";
+import type {Patient,Reading,Settings} from "./data.ts";
 export const fmt=(s?:string)=>s?new Date(`${s.slice(0,10)}T12:00`).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"—";
 export const age=(s:string)=>{const d=new Date(`${s}T12:00`),n=new Date();let a=n.getFullYear()-d.getFullYear();if(n.getMonth()<d.getMonth()||(n.getMonth()===d.getMonth()&&n.getDate()<d.getDate()))a--;return a};
-export const gestation=(edd:string)=>{const days=280-Math.round((new Date(`${edd}T12:00`).getTime()-Date.now())/86400000);return days<0?"Preconception":days>294?"Postpartum":`${Math.floor(days/7)}w ${((days%7)+7)%7}d`};
+export const gestationAt=(edd:string,asOf:string|Date)=>{const at=asOf instanceof Date?asOf:new Date(`${asOf.slice(0,10)}T12:00`),days=280-Math.round((new Date(`${edd}T12:00`).getTime()-at.getTime())/86400000);return days<0?"Preconception":days>294?"Postpartum":`${Math.floor(days/7)}w ${((days%7)+7)%7}d`};
+export const gestation=(edd:string)=>gestationAt(edd,new Date());
 export const gestationDays=(edd:string)=>280-Math.round((new Date(`${edd}T12:00`).getTime()-Date.now())/86400000);
 export const bmi=(p:Patient)=>{const inches=p.heightFeet*12+p.heightInches;return inches&&p.preWeight?((p.preWeight/(inches*inches))*703).toFixed(1):"—"};
 const calc=(a:(number|null)[],goal:number)=>{const v=a.filter((x):x is number=>typeof x==="number"&&x>0),above=v.filter(x=>x>=goal).length;return{count:v.length,avg:v.length?Math.round(v.reduce((x,y)=>x+y,0)/v.length):0,min:v.length?Math.min(...v):0,max:v.length?Math.max(...v):0,above,pct:v.length?Math.round(above/v.length*100):0}};

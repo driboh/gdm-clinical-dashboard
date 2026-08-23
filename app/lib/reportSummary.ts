@@ -1,5 +1,6 @@
 import {ClinicalSummaryData,Medication,Patient,Visit} from "./data";
-import {analyze,fmt,gestation} from "./clinical";
+import {analyze,fmt,gestationAt} from "./clinical";
+import {regimenText} from "./reportModel";
 
 type Stats=ReturnType<typeof analyze>;
 
@@ -12,7 +13,7 @@ function patternFor(s:Stats){
  return "Values predominantly within target";
 }
 
-function mealLine(s:Stats,key:"fasting"|"breakfast"|"lunch"|"dinner"){const x=s[key];return x.count?`${x.above}/${x.count} above goal — ${x.pct}%`:""}
+function mealLine(s:Stats,key:"fasting"|"breakfast"|"lunch"|"dinner"){const x=s[key];return x.count?`${x.above}/${x.count} above goal — ${x.pct}%`:"No readings available"}
 function medicationText(meds:Medication[],fallback:string){const active=meds.filter(m=>m.status==="Active");return active.length?active.map(m=>[m.name,m.dose,m.frequency].filter(Boolean).join(" ")).join("; "):fallback||"Diet controlled — no medication"}
 function planItems(v?:Visit){return (v?.plan||"").split(";").map(x=>x.trim()).filter(Boolean).slice(0,5)}
 
@@ -21,11 +22,11 @@ export function buildClinicalSummary(p:Patient,v:Visit|undefined,meds:Medication
  const plans=planItems(v);
  return {
   visitKind:initial?"Initial":"Follow-Up",
-  gestationalAge:v?.gestationalAge||gestation(p.edd),classification:v?.classification||p.classification,
+  gestationalAge:gestationAt(p.edd,v?.date||new Date().toISOString().slice(0,10)),classification:v?.classification==="A1GDM"&&(v.currentTherapy||p.therapy).toLowerCase().includes("diet")?"A1GDM — diet controlled":v?.classification==="A2GDM"?"A2GDM — medication controlled":v?.classification||p.classification,
   reason:initial?(p.diagnosisTiming||`Newly diagnosed gestational diabetes after abnormal diagnostic testing${p.diagnosisDate?` on ${fmt(p.diagnosisDate)}`:""}.`):"",
-  therapy:medicationText(meds,p.therapy),reviewPeriod:initial?"":period==="custom"?"Custom date range":`Last ${period} days`,
+  therapy:regimenText(v?.currentMedication)||medicationText(meds,v?.currentTherapy||p.therapy),reviewPeriod:period==="custom"?"Custom date range":`Last ${period} days`,
   pattern:initial?(hasData?pattern:"Newly starting home glucose monitoring"):pattern,
-  fasting:initial?"":mealLine(stats,"fasting"),breakfast:initial?"":mealLine(stats,"breakfast"),lunch:initial?"":mealLine(stats,"lunch"),dinner:initial?"":mealLine(stats,"dinner"),
+  fasting:mealLine(stats,"fasting"),breakfast:mealLine(stats,"breakfast"),lunch:mealLine(stats,"lunch"),dinner:mealLine(stats,"dinner"),
   overallControl:hasData?`${stats.atGoal}% of readings at goal`:"",
   impression:initial?(v?.assessment||"Appropriate for clinician-directed nutrition therapy and home glucose monitoring."):"",
   plan:plans.length?plans:(initial?["Begin fasting and postprandial glucose monitoring","Reinforce GDM diet and carbohydrate distribution","Encourage post-meal activity as obstetrically appropriate"]:[]),

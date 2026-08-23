@@ -3,7 +3,7 @@ import {ClinicalSummaryData} from "../lib/data";
 export function GdmClinicalSummary({summary}:{summary:ClinicalSummaryData}){
  const changed=summary.medicationChange&&summary.medicationChange!=="None";
  const rows=summary.visitKind==="Initial"?[
-  ["Gestational Age",summary.gestationalAge,true],["GDM Classification",summary.classification,true],["Reason for Referral / Diagnosis",summary.reason,false],["Current Therapy",summary.therapy,true],["Glucose Status",summary.pattern,true],["Primary Clinical Impression",summary.impression,false]
+  ["Gestational Age",summary.gestationalAge,true],["GDM Classification",summary.classification,true],["Reason for Referral / Diagnosis",summary.reason,false],["Current Therapy",summary.therapy,true],["Glucose Review Period",summary.reviewPeriod,false],["Glucose Status",summary.pattern,true],["Fasting",summary.fasting,false],["Breakfast",summary.breakfast,false],["Lunch",summary.lunch,false],["Dinner",summary.dinner,false],["Overall Control",summary.overallControl,false],["Primary Clinical Impression",summary.impression,false]
  ]:[
   ["Gestational Age",summary.gestationalAge,true],["GDM Classification",summary.classification,true],["Current Therapy",summary.therapy,true],["Glucose Review Period",summary.reviewPeriod,false],["Key Glucose Pattern",summary.pattern,true],["Fasting",summary.fasting,false],["Breakfast",summary.breakfast,false],["Lunch",summary.lunch,false],["Dinner",summary.dinner,false],["Overall Control",summary.overallControl,false]
  ];
