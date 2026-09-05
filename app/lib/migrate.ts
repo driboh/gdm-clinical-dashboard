@@ -15,6 +15,9 @@ export function migrateData(input:unknown):AppData{
   medications,
   visits:normalizedVisits.map(v=>repairLegacyMockVisitChronology(v,patients.find(p=>p.id===v.patientId),settings.displayName)),
   reports:Array.isArray(raw.reports)?raw.reports.map(r=>({...r,visitVersion:r.visitVersion||r.snapshot?.visit?.version||1})):demoData.reports,
+  portalAccess:Array.isArray(raw.portalAccess)?raw.portalAccess:[],
+  patientSubmissions:Array.isArray(raw.patientSubmissions)?raw.patientSubmissions:[],
+  auditEvents:Array.isArray(raw.auditEvents)?raw.auditEvents:[],
   settings
  };
 }

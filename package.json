@@ -10,16 +10,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "pnpm build && node --experimental-strip-types --test tests/report-consistency.test.ts",
+    "test": "pnpm build && node --experimental-strip-types --test tests/report-consistency.test.ts tests/patient-portal.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:portal": "node scripts/migrate-portal.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "chart.js": "^4.5.1",
     "drizzle-orm": "0.45.2",
     "html2pdf.js": "^0.14.0",
     "lucide-react": "^1.31.0",
     "next": "16.2.6",
+    "qrcode": "^1.5.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-loading-skeleton": "3.5.0"
@@ -31,6 +34,7 @@
     "@openai/sites-vite-plugin": "0.1.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
