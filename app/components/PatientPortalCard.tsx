@@ -36,7 +36,7 @@ export function PatientPortalCard({
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
   const url =
-    access && origin ? `${origin}/patient/submit/${access.token}` : "";
+    access?.token && origin ? `${origin}/patient/submit/${access.token}` : "";
   useEffect(() => {
     if (!showQr || !url) return;
     QRCode.toDataURL(url, {
@@ -105,7 +105,7 @@ export function PatientPortalCard({
       <div className="card-head">
         <span>
           <h3>Patient Glucose Portal</h3>
-          <p>Prototype same-browser submission workflow</p>
+          <p>Prototype server-backed submission workflow</p>
         </span>
         <em className={`portal-status ${access ? "active" : "disabled"}`}>
           {access ? "Active" : "Disabled"}
