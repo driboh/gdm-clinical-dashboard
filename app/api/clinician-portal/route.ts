@@ -7,7 +7,7 @@ const n=(value:unknown)=>value==null?null:Number(value);
 async function snapshot(){
  const sql=portalDb();
  const [patientRows,accessRows,submissionRows,readingRows,auditRows,importedRows]=await Promise.all([
-  sql`SELECT record FROM patients ORDER BY updated_at DESC`,
+  sql`SELECT id,first_name,last_name,record FROM patients ORDER BY updated_at DESC`,
   sql`SELECT id,patient_id,status,show_targets,created_at,expires_at,disabled_at,last_submission_at FROM patient_portal_access ORDER BY created_at DESC`,
   sql`SELECT * FROM patient_submissions ORDER BY submitted_at DESC`,
   sql`SELECT * FROM patient_submission_readings ORDER BY reading_date`,
@@ -15,7 +15,7 @@ async function snapshot(){
   sql`SELECT * FROM patient_glucose_readings WHERE source='Patient Portal' ORDER BY reading_date`,
  ]);
  return {
-  patients:patientRows.map(x=>json(x.record,{})),
+  patients:patientRows.map(x=>json<Record<string,unknown>|null>(x.record,null)).filter((x):x is Record<string,unknown>=>Boolean(x&&x.id&&x.firstName&&x.lastName)),
   portalAccess:accessRows.map(x=>({id:String(x.id),patientId:String(x.patient_id),token:"",status:x.status==="Active"&&new Date(String(x.expires_at))<=new Date()?"Expired":String(x.status),showTargets:Boolean(x.show_targets),createdAt:String(x.created_at),expiresAt:String(x.expires_at),disabledAt:x.disabled_at?String(x.disabled_at):undefined,lastSubmissionAt:x.last_submission_at?String(x.last_submission_at):undefined})),
   patientSubmissions:submissionRows.map(s=>({id:String(s.id),patientId:String(s.patient_id),portalAccessId:String(s.portal_access_id),submissionToken:"",submittedAt:String(s.submitted_at),source:"Patient Portal",status:String(s.status),approvedBy:s.approved_by?String(s.approved_by):undefined,approvedAt:s.approved_at?String(s.approved_at):undefined,rejectedBy:s.rejected_by?String(s.rejected_by):undefined,rejectedAt:s.rejected_at?String(s.rejected_at):undefined,readings:readingRows.filter(r=>r.submission_id===s.id).map(r=>({id:String(r.id),date:String(r.reading_date).slice(0,10),fasting:n(r.fasting),breakfast:n(r.breakfast),lunch:n(r.lunch),dinner:n(r.dinner),notes:String(r.notes||""),original:json(r.original_values,undefined),editHistory:json(r.edit_history,[])}))})),
   auditEvents:auditRows.map(a=>({id:String(a.id),patientId:String(a.patient_id),submissionId:a.submission_id?String(a.submission_id):undefined,action:String(a.action),actor:String(a.actor),timestamp:String(a.created_at),details:String(a.details||"")})),

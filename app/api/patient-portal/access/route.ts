@@ -8,9 +8,9 @@ export async function POST(request: Request) {
     if (!body.patient?.id || !body.patient?.firstName || !body.patient?.lastName)
       return Response.json({ error: "A fictional patient record is required." }, { status: 400 });
     const sql = portalDb(), now = new Date().toISOString(), accessId = id(), token = portalToken(), expiresAt = expiresInDays(90);
-    await sql`INSERT INTO patients (id, first_name, last_name, mock, updated_at)
-      VALUES (${body.patient.id}, ${body.patient.firstName}, ${body.patient.lastName}, ${Boolean(body.patient.mock)}, ${now})
-      ON CONFLICT (id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,mock=EXCLUDED.mock,updated_at=EXCLUDED.updated_at`;
+    await sql`INSERT INTO patients (id, first_name, last_name, mock, record, updated_at)
+      VALUES (${body.patient.id}, ${body.patient.firstName}, ${body.patient.lastName}, ${Boolean(body.patient.mock)}, ${JSON.stringify(body.patient)}, ${now})
+      ON CONFLICT (id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,mock=EXCLUDED.mock,record=EXCLUDED.record,updated_at=EXCLUDED.updated_at`;
     await sql`UPDATE patient_portal_access SET status='Disabled',disabled_at=${now} WHERE patient_id=${body.patient.id} AND status='Active'`;
     await sql`INSERT INTO patient_portal_access (id,patient_id,token_hash,status,show_targets,fasting_target,post_meal_target,monitoring,created_at,expires_at)
       VALUES (${accessId},${body.patient.id},${tokenHash(token)},'Active',${body.showTargets !== false},${Number(body.fastingTarget)||95},${Number(body.postMealTarget)||140},${body.monitoring === "2 hour" ? "2 hour" : "1 hour"},${now},${expiresAt})`;
