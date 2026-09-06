@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "pnpm build && node --experimental-strip-types --test tests/report-consistency.test.ts tests/patient-portal.test.ts tests/security-boundaries.test.ts tests/better-auth-mfa.test.ts",
+    "test": "pnpm build && node --experimental-strip-types --test tests/report-consistency.test.ts tests/patient-portal.test.ts tests/security-boundaries.test.ts tests/better-auth-mfa.test.ts tests/clinical-persistence.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate:portal": "node scripts/migrate-portal.mjs"

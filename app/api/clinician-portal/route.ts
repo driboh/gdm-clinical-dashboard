@@ -27,14 +27,6 @@ async function snapshot(){
 
 export async function GET(){try{await requireClinician();return Response.json(await snapshot())}catch(error){return authorizationResponse(error)||Response.json({error:databaseError(error)},{status:503})}}
 
-export async function POST(request:Request){
- try{await requireClinician(["Admin","Clinician"]);const body=await request.json(),sql=portalDb();
-  for(const patient of body.patients||[])await sql`INSERT INTO patients (id,first_name,last_name,mock,record) VALUES (${patient.id},${patient.firstName},${patient.lastName},true,${JSON.stringify(patient)}) ON CONFLICT (id) DO UPDATE SET first_name=excluded.first_name,last_name=excluded.last_name,record=excluded.record,updated_at=now()`;
-  for(const row of body.readings||[])await sql`INSERT INTO patient_glucose_readings (id,patient_id,reading_date,fasting,breakfast,lunch,dinner,notes,source) VALUES (${row.id},${row.patientId},${row.date},${n(row.fasting)},${n(row.breakfast)},${n(row.lunch)},${n(row.dinner)},${String(row.notes||"")},${String(row.source||"Clinician Entry")}) ON CONFLICT (patient_id,reading_date) DO UPDATE SET fasting=excluded.fasting,breakfast=excluded.breakfast,lunch=excluded.lunch,dinner=excluded.dinner,notes=excluded.notes,updated_at=now()`;
-  return Response.json({ok:true});
- }catch(error){return authorizationResponse(error)||Response.json({error:databaseError(error)},{status:503})}
-}
-
 export async function PATCH(request:Request){
  try{const actor=await requireClinician(["Admin","Clinician"]);const body=await request.json(),sql=portalDb(),provider=actor.displayName,submissionId=String(body.submissionId||""),submission=(await sql`SELECT * FROM patient_submissions WHERE id=${submissionId} LIMIT 1`)[0];if(!submission)return Response.json({error:"Submission not found"},{status:404});
   if(body.action==="view"){await sql`INSERT INTO audit_events (id,patient_id,submission_id,action,actor,details) VALUES (${id()},${submission.patient_id},${submissionId},'Clinician viewed submission',${provider},'Fictional-data prototype')`;return Response.json({ok:true});}

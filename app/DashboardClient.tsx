@@ -62,7 +62,7 @@ import { PatientPortalCard } from "./components/PatientPortalCard";
 import { SubmissionQueue } from "./components/SubmissionQueue";
 import { mergePortalSnapshot, patientPortalApi } from "./lib/patientPortalApi";
 import { clinicalDataApi } from "./lib/clinicalDataApi";
-import { auditDataChanges, sendAudit } from "./lib/auditClient";
+import { sendAudit } from "./lib/auditClient";
 import { signOut } from "./auth/actions";
 
 type Page =
@@ -519,7 +519,6 @@ export default function Home() {
         if (!initial) {
           initial = migrateData(demoData);
           await clinicalDataApi.save(initial);
-          await patientPortalApi.sync(initial);
         }
         if (active) setData0(initial);
       } catch {
@@ -551,10 +550,9 @@ export default function Home() {
   }, [ready]);
   const save = (next: AppData) => {
     const stamped = stampFinalizedVisits(next);
-    auditDataChanges(data, stamped);
     setData0(stamped);
     setSaved("Saving…");
-    Promise.all([clinicalDataApi.save(stamped), patientPortalApi.sync(stamped)])
+    clinicalDataApi.save(stamped)
       .then(() => setSaved("✓ All changes saved"))
       .catch(() => setSaved("Secure save failed"));
   };
@@ -688,7 +686,7 @@ export default function Home() {
               </div>
             )}
           </div>
-          <span className={`saved ${saved === "Save failed" ? "failed" : ""}`}>
+          <span className={`saved ${saved.toLowerCase().includes("failed") || saved.toLowerCase().includes("unavailable") ? "failed" : ""}`}>
             {saved}
           </span>
           {page === "Patient" && (

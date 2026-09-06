@@ -2,7 +2,7 @@
 
 **PROTOTYPE — FICTIONAL DATA ONLY**
 
-This is a front-end clinical workflow prototype. Do not enter protected health
+This is a clinical workflow prototype. Do not enter protected health
 information until secure authentication, encryption, access controls, audit
 logging, appropriate hosting, and business associate agreements are in place.
 
@@ -25,11 +25,12 @@ npm run build
 
 ## Data storage
 
-Most existing clinical prototype data remains in browser `localStorage`.
-Patient portal invitations, submissions, review history, imported portal
-readings, and portal audit events use the configured shared PostgreSQL database.
-This allows the fictional portal workflow to cross devices after `DATABASE_URL`
-is configured and the migration has been applied.
+All PHI-capable clinical records and drafts are stored in the configured Neon
+PostgreSQL database. The browser holds only active in-memory UI state and does
+not use `localStorage`, `sessionStorage`, or IndexedDB for clinical data.
+Patient portal invitations, submissions, review history, imported readings, and
+audit events also use PostgreSQL. The dashboard fails closed when the database
+is unavailable.
 
 ## Prototype patient submission portal
 
@@ -67,6 +68,6 @@ and privacy review. Do not use this prototype for real PHI.
 4. Keep the detected framework as **Next.js** and deploy with the repository
    root as the root directory.
 
-Vercel configuration is provided in `vercel.json`. No cloud services,
-credentials, analytics, authentication, or external patient-data APIs are
-required by this prototype.
+Vercel configuration is provided in `vercel.json`. Authentication and database
+credentials are server-only deployment environment variables and must never be
+committed. No analytics or external patient-data APIs are used.

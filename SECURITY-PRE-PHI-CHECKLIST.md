@@ -4,7 +4,7 @@ Status: **PROTOTYPE — DO NOT ENTER REAL PHI**. Technical safeguards alone do n
 
 ## COMPLETED TECHNICAL CONTROLS
 
-- [x] Clinician authentication uses managed Neon Auth through its official server SDK.
+- [x] Clinician authentication uses self-hosted Better Auth with required TOTP MFA and recovery codes.
 - [x] The dashboard requires a server-validated session and active PostgreSQL role: `Admin`, `Clinician`, or `Read-only staff`.
 - [x] Every private clinical API independently returns 401 for no session and 403 for insufficient role; mutating APIs allow only Admin/Clinician.
 - [x] Patients, glucose readings, visits, visit versions, medications, medication changes, reports, provider settings, and drafts persist in PostgreSQL. No clinical `localStorage`, `sessionStorage`, or IndexedDB persistence remains.
@@ -36,7 +36,7 @@ Status: **PROTOTYPE — DO NOT ENTER REAL PHI**. Technical safeguards alone do n
 |---|---|---:|---|
 | Vercel | Requests, server execution, deployments, operational/build logs, support metadata | Yes | Confirm exact plan/services/regions/subprocessors are PHI-eligible and execute a BAA covering this account and project. |
 | Neon PostgreSQL | Clinical database, audit data, branches, backups, logs, support artifacts | Yes | Confirm exact plan/region/features are PHI-eligible; execute a BAA; verify retention and restore capabilities. |
-| Neon Auth | Clinician identity, sessions, authentication events | Yes | Confirm managed Auth is covered by Neon eligibility/BAA and review reset, recovery, revocation, and support procedures. |
+| Better Auth (self-hosted) | Clinician identity, sessions, authentication events | Stored in Neon | Maintain MFA/recovery/session controls and include this data in database security and recovery reviews. |
 | GitHub | Application source and deployment metadata | Must not | Keep repository private; never commit PHI, exports, PDFs, logs, or secrets; verify organizational controls. |
 | Chart.js | Browser-rendered glucose charts | Locally only | Confirm production bundle is local and no runtime CDN/request receives chart data. |
 | html2pdf.js / html2canvas | Browser-generated clinical PDF | Locally only | Confirm generation remains local; review downloaded-file/device/printer handling. |
@@ -46,8 +46,7 @@ Status: **PROTOTYPE — DO NOT ENTER REAL PHI**. Technical safeguards alone do n
 
 ## BLOCKERS BEFORE REAL PHI
 
-- [ ] Application-level MFA is not available in the current managed Neon Auth integration. Neon Console 2FA is separate and does not satisfy clinician-dashboard MFA. Use a mature supported MFA-capable provider/integration before PHI.
-- [ ] Disable Neon Auth's development `Allow Localhost` trusted-origin setting and confirm only approved production origins remain.
+- [ ] Complete an independent review of the self-hosted Better Auth configuration, MFA enrollment/recovery, privileged-account reset, and emergency access procedures.
 - [ ] Execute required Vercel and Neon agreements and obtain written confirmation that exact plans and enabled services are eligible for PHI.
 - [ ] Verify and document Secure/SameSite cookie behavior, absolute and idle session expiration, session revocation, fixation resistance, and CSRF protection in production.
 - [ ] Complete technical security tests, an isolated restore drill, the compliance program, policies, and formal approval described above.

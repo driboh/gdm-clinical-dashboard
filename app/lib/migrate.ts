@@ -1,8 +1,7 @@
 import {AppData,demoData} from "./data";
 import {repairLegacyMockVisitChronology} from "./medicationTimeline";
 
-// Prototype-only local browser storage migration. A secure backend can replace
-// this boundary later without changing the clinical components.
+// Backward-compatible schema normalization for records loaded from PostgreSQL.
 export function migrateData(input:unknown):AppData{
  const raw=(input&&typeof input==="object"?input:{}) as Partial<AppData>;
  const settings={...demoData.settings,...(raw.settings||{}),providerName:"Daniel Riboh",credentials:"PA-C",displayName:"Daniel Riboh, PA-C",role:"GDM Management"};

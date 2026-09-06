@@ -7,13 +7,10 @@ import type {
 } from "./data.ts";
 import { newId } from "./data.ts";
 
-export const PROTOTYPE_STORAGE_KEY = "gdm-clinical-data-v2";
 export type DuplicateChoice = "keep" | "replace" | "skip";
 
-// Prototype adapter boundary. Real deployment must replace this with authenticated
-// patient/clinician sessions, expiring tokens, encrypted transport/storage, access
-// controls, audit logging, backups, a secure database, HIPAA-appropriate vendors
-// and BAAs, and a formal security review before PHI is used.
+// Pure state helpers retained for UI calculations and test fixtures. Durable
+// portal data is read and written only through authenticated server APIs.
 export const patientPortalService = {
   createInvitation(
     data: AppData,
