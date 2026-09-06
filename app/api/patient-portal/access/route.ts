@@ -1,9 +1,11 @@
 import { databaseError, expiresInDays, id, portalDb, portalToken, tokenHash } from "../../../../db/portal";
+import { authorizationResponse, requireClinician } from "../../../lib/auth/authorization";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    const actor = await requireClinician(["Admin", "Clinician"]);
     const body = await request.json();
     if (!body.patient?.id || !body.patient?.firstName || !body.patient?.lastName)
       return Response.json({ error: "A fictional patient record is required." }, { status: 400 });
@@ -17,18 +19,19 @@ export async function POST(request: Request) {
     for (const reading of body.readings || []) await sql`INSERT INTO patient_glucose_readings (id,patient_id,reading_date,fasting,breakfast,lunch,dinner,notes,source)
       VALUES (${reading.id},${body.patient.id},${reading.date},${reading.fasting},${reading.breakfast},${reading.lunch},${reading.dinner},${reading.notes||""},${reading.source||"Clinician Entry"})
       ON CONFLICT (patient_id,reading_date) DO NOTHING`;
-    await sql`INSERT INTO clinician_users (id,display_name) VALUES (${body.clinician||"prototype-clinician"},${body.clinician||"Prototype Clinician"}) ON CONFLICT (id) DO NOTHING`;
-    await sql`INSERT INTO audit_events (id,patient_id,action,actor,details) VALUES (${id()},${body.patient.id},'Portal created',${body.clinician||"Prototype Clinician"},'Fictional-data prototype')`;
+    await sql`INSERT INTO clinician_users (id,display_name,email) VALUES (${actor.userId},${actor.displayName},${actor.email}) ON CONFLICT (id) DO NOTHING`;
+    await sql`INSERT INTO audit_events (id,patient_id,action,actor,actor_id,source,details) VALUES (${id()},${body.patient.id},'Portal created',${actor.displayName},${actor.userId},'Clinician','Fictional-data prototype')`;
     return Response.json({ access:{id:accessId,patientId:body.patient.id,token,status:"Active",createdAt:now,expiresAt,showTargets:body.showTargets !== false} }, { status: 201 });
-  } catch (error) { return Response.json({ error: databaseError(error) }, { status: 503 }); }
+  } catch (error) { return authorizationResponse(error) || Response.json({ error: databaseError(error) }, { status: 503 }); }
 }
 
 export async function PATCH(request: Request) {
   try {
+    const actor = await requireClinician(["Admin", "Clinician"]);
     const body = await request.json(), sql = portalDb(), now = new Date().toISOString();
     if (!body.patientId) return Response.json({ error:"patientId is required" },{status:400});
     await sql`UPDATE patient_portal_access SET status='Disabled',disabled_at=${now} WHERE patient_id=${body.patientId} AND status='Active'`;
-    await sql`INSERT INTO audit_events (id,patient_id,action,actor,details) VALUES (${id()},${body.patientId},'Portal disabled',${body.clinician||"Prototype Clinician"},'Fictional-data prototype')`;
+    await sql`INSERT INTO audit_events (id,patient_id,action,actor,actor_id,source,details) VALUES (${id()},${body.patientId},'Portal disabled',${actor.displayName},${actor.userId},'Clinician','Fictional-data prototype')`;
     return Response.json({ ok:true });
-  } catch (error) { return Response.json({ error: databaseError(error) }, { status: 503 }); }
+  } catch (error) { return authorizationResponse(error) || Response.json({ error: databaseError(error) }, { status: 503 }); }
 }
