@@ -1,7 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { recordAudit } from "../lib/audit";
-import { getClinicianContext, isInitialAdminEmail, provisionInitialAdmin } from "../lib/auth/authorization";
+import { getClinicianContext, isInitialAdminEmail, provisionInitialAdmin, type ClinicianContext } from "../lib/auth/authorization";
 import { clinicianAuth } from "../lib/auth/server";
 
 export type AuthState = { error?: string };
@@ -9,6 +9,13 @@ export type AuthState = { error?: string };
 const credentials = (formData: FormData) => ({
   email: String(formData.get("email") || "").trim().toLowerCase(),
   password: String(formData.get("password") || ""),
+});
+
+const initialAdminActor = (user: { id: string; email: string; name?: string }): ClinicianContext => ({
+  userId: user.id,
+  email: user.email.trim().toLowerCase(),
+  displayName: user.name || "Daniel Riboh, PA-C",
+  role: "Admin",
 });
 
 export async function signIn(_state: AuthState, formData: FormData): Promise<AuthState> {
@@ -20,8 +27,7 @@ export async function signIn(_state: AuthState, formData: FormData): Promise<Aut
     const user = result.data?.user as { id: string; email: string; name?: string } | undefined;
     if (!user) return { error: "A secure session could not be created." };
     await provisionInitialAdmin(user);
-    const actor = await getClinicianContext();
-    if (actor) await recordAudit({ action: "clinician.login", actor, entityType: "session" });
+    await recordAudit({ action: "clinician.login", actor: initialAdminActor(user), entityType: "session" });
   } catch {
     return { error: "Secure sign-in is temporarily unavailable." };
   }
@@ -38,8 +44,7 @@ export async function signUp(_state: AuthState, formData: FormData): Promise<Aut
     const user = result.data?.user as { id: string; email: string; name?: string } | undefined;
     if (!user) return { error: "The clinician account was created but no session was returned." };
     await provisionInitialAdmin(user);
-    const actor = await getClinicianContext();
-    if (actor) await recordAudit({ action: "clinician.login", actor, entityType: "session", details: "Initial authorized account created" });
+    await recordAudit({ action: "clinician.login", actor: initialAdminActor(user), entityType: "session", details: "Initial authorized account created" });
   } catch {
     return { error: "Secure account setup is temporarily unavailable." };
   }

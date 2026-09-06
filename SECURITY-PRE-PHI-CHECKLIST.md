@@ -16,6 +16,7 @@ Status: **prototype only — do not enter real PHI**. Authentication and databas
 - [ ] Obtain and review BAAs for every vendor and verify that the specific Vercel and Neon products, plan, regions, support paths, logs, and subprocessors used are HIPAA-eligible.
 - [ ] Complete a formal security risk assessment and written risk-management plan.
 - [ ] Enforce MFA for every workforce account; prohibit shared accounts; define strong password and account-recovery policies.
+- [ ] Disable Neon Auth's development-only `Allow Localhost` trusted-origin setting before production PHI use.
 - [ ] Establish role approval, periodic access review, rapid offboarding, least privilege, and minimum-necessary access policies.
 - [ ] Verify TLS for all traffic and documented encryption at rest for database, backups, logs, and provider-managed replicas.
 - [ ] Configure tested backups, point-in-time recovery, restore drills, disaster recovery objectives, and business-continuity procedures.
