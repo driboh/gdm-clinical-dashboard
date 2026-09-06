@@ -1,8 +1,9 @@
 import { databaseError, id, portalDb, tokenHash } from "../../../../db/portal";
+import { dateOnly } from "../../../lib/dateOnly";
 
 export const dynamic = "force-dynamic";
 const numeric = (value: unknown) => value == null || value === "" ? null : Number(value);
-const safeReading = (row: Record<string,unknown>) => ({id:String(row.id),date:String(row.reading_date).slice(0,10),fasting:numeric(row.fasting),breakfast:numeric(row.breakfast),lunch:numeric(row.lunch),dinner:numeric(row.dinner),notes:String(row.notes||"")});
+const safeReading = (row: Record<string,unknown>) => ({id:String(row.id),date:dateOnly(row.reading_date),fasting:numeric(row.fasting),breakfast:numeric(row.breakfast),lunch:numeric(row.lunch),dinner:numeric(row.dinner),notes:String(row.notes||"")});
 
 async function accessFor(token:string){const sql=portalDb(),hash=tokenHash(token),rows=await sql`SELECT a.*,p.first_name FROM patient_portal_access a JOIN patients p ON p.id=a.patient_id WHERE a.token_hash=${hash} LIMIT 1`,access=rows[0];if(!access||access.status!=="Active"||new Date(String(access.expires_at))<=new Date())return null;return access;}
 

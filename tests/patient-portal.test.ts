@@ -3,6 +3,7 @@ import test from "node:test";
 import QRCode from "qrcode";
 import { demoData, newId, type AppData, type SubmittedReading } from "../app/lib/data.ts";
 import { editSubmittedReading, patientPortalService } from "../app/lib/patientPortalService.ts";
+import { dateOnly } from "../app/lib/dateOnly.ts";
 
 const copyData = (): AppData => JSON.parse(JSON.stringify(demoData));
 const row = (date: string, fasting = 101): SubmittedReading => ({
@@ -74,4 +75,28 @@ test("a clinician can reject a pending submission without importing readings", (
   const rejected = patientPortalService.reject(submitted, submitted.patientSubmissions[0].id, "Daniel Riboh, PA-C");
   assert.equal(rejected.patientSubmissions[0].status, "Rejected");
   assert.equal(rejected.readings.some((x) => x.patientId === patient.id && x.date === "2026-08-20"), false);
+});
+
+test("SQL date values remain date-only across a five-day portal import", () => {
+  const expected = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"];
+  assert.deepEqual(
+    expected.map((date) => dateOnly(new Date(`${date}T00:00:00.000Z`))),
+    expected,
+  );
+  const base = copyData(), patient = base.patients[0];
+  const invited = patientPortalService.createInvitation(base, patient.id);
+  const submitted = patientPortalService.submit(invited.data, invited.access.token, expected.map((date) => row(date)));
+  const imported = patientPortalService.approveAndImport(
+    submitted,
+    submitted.patientSubmissions[0].id,
+    "Daniel Riboh, PA-C",
+    Object.fromEntries(expected.map((date) => [date, "replace"])),
+  );
+  assert.deepEqual(
+    imported.readings.filter((reading) => reading.sourceSubmissionId === submitted.patientSubmissions[0].id).map((reading) => reading.date).sort(),
+    expected,
+  );
+  assert.ok(imported.patientSubmissions[0].submittedAt);
+  assert.ok(imported.patientSubmissions[0].approvedAt);
+  assert.ok(imported.patientSubmissions[0].importedAt);
 });

@@ -226,6 +226,7 @@ export const patientPortalService = {
               status: "Imported" as const,
               approvedBy: provider,
               approvedAt: now,
+              importedAt: now,
             }
           : x,
       ),
