@@ -6,8 +6,5 @@ export const config = {
   matcher: [
     "/",
     "/access-denied",
-    "/api/clinician-portal/:path*",
-    "/api/audit/:path*",
-    "/api/patient-portal/access/:path*",
   ],
 };

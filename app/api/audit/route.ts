@@ -3,6 +3,10 @@ import { authorizationResponse, requireClinician } from "../../lib/auth/authoriz
 
 const allowed = new Set([
   "patient.viewed",
+  "patient.created",
+  "patient.edited",
+  "glucose.reviewed",
+  "glucose.changed",
   "visit.edited",
   "visit.finalized",
   "visit.refinalized",

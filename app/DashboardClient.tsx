@@ -60,8 +60,8 @@ import {
 } from "./lib/medicationTimeline";
 import { PatientPortalCard } from "./components/PatientPortalCard";
 import { SubmissionQueue } from "./components/SubmissionQueue";
-import { PROTOTYPE_STORAGE_KEY } from "./lib/patientPortalService";
 import { mergePortalSnapshot, patientPortalApi } from "./lib/patientPortalApi";
+import { clinicalDataApi } from "./lib/clinicalDataApi";
 import { auditDataChanges, sendAudit } from "./lib/auditClient";
 import { signOut } from "./auth/actions";
 
@@ -498,6 +498,7 @@ function filterReviewReadings(
 export default function Home() {
   const [data, setData0] = useState<AppData>(demoData),
     [ready, setReady] = useState(false),
+    [loadError, setLoadError] = useState(false),
     [saved, setSaved] = useState("✓ All changes saved"),
     [page, setPage] = useState<Page>("Dashboard"),
     [patientId, setPatientId] = useState("p-sarah"),
@@ -510,22 +511,33 @@ export default function Home() {
     [detailVisit, setDetailVisit] = useState<string | null>(null),
     [query, setQuery] = useState("");
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PROTOTYPE_STORAGE_KEY);
-      if (raw) {
-        const migrated = migrateData(JSON.parse(raw));
-        setData0({
-          ...migrated,
-          portalAccess: [],
-          patientSubmissions: [],
-          auditEvents: [],
-          readings: migrated.readings.filter((x) => x.source !== "Patient Portal"),
-        });
+    let active = true;
+    const load = async () => {
+      try {
+        const server = await clinicalDataApi.load();
+        let initial = server.state ? migrateData(server.state) : null;
+        if (!initial) {
+          // One-time transition from the former fictional-data browser store.
+          // The legacy value is deleted only after PostgreSQL confirms the save.
+          const raw = window.localStorage.getItem("gdm-clinical-data-v2");
+          initial = raw ? migrateData(JSON.parse(raw)) : migrateData(demoData);
+          await clinicalDataApi.save(initial);
+          await patientPortalApi.sync(initial);
+          window.localStorage.removeItem("gdm-clinical-data-v2");
+          Object.keys(window.localStorage).filter((key) => key.startsWith("gdm-draft-")).forEach((key) => window.localStorage.removeItem(key));
+        }
+        if (active) setData0(initial);
+      } catch {
+        if (active) {
+          setSaved("Secure clinical database unavailable");
+          setLoadError(true);
+        }
+      } finally {
+        if (active) setReady(true);
       }
-    } catch {
-      // Invalid legacy prototype data is ignored; the bundled mock data remains.
-    }
-    setReady(true);
+    };
+    load();
+    return () => { active = false; };
   }, []);
   useEffect(() => {
     if (!ready) return;
@@ -542,35 +554,20 @@ export default function Home() {
     const timer = window.setInterval(refresh, 30000);
     return () => { active = false; window.clearInterval(timer); };
   }, [ready]);
-  useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key !== PROTOTYPE_STORAGE_KEY || !event.newValue) return;
-      try {
-        setData0(migrateData(JSON.parse(event.newValue)));
-      } catch {
-        // Ignore malformed cross-tab prototype messages.
-      }
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
   const save = (next: AppData) => {
     const stamped = stampFinalizedVisits(next);
     auditDataChanges(data, stamped);
     setData0(stamped);
     setSaved("Saving…");
-    try {
-      localStorage.setItem(PROTOTYPE_STORAGE_KEY, JSON.stringify(stamped));
-      patientPortalApi.sync(stamped).catch(() => {});
-      setTimeout(() => setSaved("✓ All changes saved"), 250);
-    } catch {
-      setSaved("Save failed");
-    }
+    Promise.all([clinicalDataApi.save(stamped), patientPortalApi.sync(stamped)])
+      .then(() => setSaved("✓ All changes saved"))
+      .catch(() => setSaved("Secure save failed"));
   };
   const patient =
     data.patients.find((x) => x.id === patientId) || data.patients[0];
   const openPatient = (id: string, t = "Overview") => {
     sendAudit({ action: "patient.viewed", patientId: id, entityType: "patient", entityId: id });
+    if (t === "Glucose") sendAudit({ action: "glucose.reviewed", patientId: id, entityType: "patient", entityId: id, details: "Success" });
     setPatientId(id);
     setTab(t);
     setPage("Patient");
@@ -606,6 +603,8 @@ export default function Home() {
     });
   if (!ready)
     return <div className="loading">Loading GDM Clinical Dashboard…</div>;
+  if (loadError)
+    return <div className="loading">Secure clinical database unavailable. No browser-stored clinical record was opened. Please refresh or contact the administrator.</div>;
   return (
     <div className="shell">
       <aside className={menu ? "open" : ""}>
@@ -2206,10 +2205,8 @@ function VisitFlow({
       `${gestation(p.edd)} G${p.gravida}P${p.para} with ${p.classification}. Glucose log reviewed: ${stats.fasting.above}/${stats.fasting.count} fasting readings above goal; postprandial values ${stats.postAbove < 30 ? "predominantly controlled" : "require review"}. Continue monitoring and follow up ${follow}.`,
     );
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        `gdm-draft-${p.id}`,
-        JSON.stringify({
+    const timer = window.setTimeout(() => {
+      clinicalDataApi.saveDraft(p.id, {
           step,
           type,
           blood,
@@ -2222,9 +2219,9 @@ function VisitFlow({
           follow,
           nextDate,
           summary,
-        }),
-      );
-    } catch {}
+      }).catch(() => {});
+    }, 400);
+    return () => window.clearTimeout(timer);
   }, [
     step,
     type,
@@ -2296,7 +2293,7 @@ function VisitFlow({
       currentWeight: Number(weight) || p.currentWeight,
       therapy: therapy.join(" + "),
     };
-    localStorage.removeItem(`gdm-draft-${p.id}`);
+    clinicalDataApi.deleteDraft(p.id).catch(() => {});
     save({
       ...data,
       patients: data.patients.map((x) => (x.id === p.id ? updated : x)),

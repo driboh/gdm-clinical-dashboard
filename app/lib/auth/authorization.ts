@@ -41,6 +41,7 @@ function ensureSecuritySchema() {
     await sql`ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'Clinician'`;
     await sql`ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS entity_type text`;
     await sql`ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS entity_id text`;
+    await sql`ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS outcome text NOT NULL DEFAULT 'Success'`;
     await sql`CREATE INDEX IF NOT EXISTS audit_action_created_idx ON audit_events(action, created_at DESC)`;
     await sql`CREATE INDEX IF NOT EXISTS audit_actor_created_idx ON audit_events(actor_id, created_at DESC)`;
   })();

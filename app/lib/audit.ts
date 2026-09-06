@@ -10,9 +10,10 @@ export async function recordAudit(input: {
   entityType?: string;
   entityId?: string;
   details?: string;
+  outcome?: "Success" | "Failure";
 }) {
   const sql = portalDb();
   await sql`INSERT INTO audit_events
-    (id,patient_id,submission_id,action,actor,actor_id,source,entity_type,entity_id,details)
-    VALUES (${crypto.randomUUID()},${input.patientId || null},${input.submissionId || null},${input.action},${input.actor?.displayName || input.source || "System"},${input.actor?.userId || null},${input.source || "Clinician"},${input.entityType || null},${input.entityId || null},${input.details || null})`;
+    (id,patient_id,submission_id,action,actor,actor_id,source,entity_type,entity_id,details,outcome)
+    VALUES (${crypto.randomUUID()},${input.patientId || null},${input.submissionId || null},${input.action},${input.actor?.displayName || input.source || "System"},${input.actor?.userId || null},${input.source || "Clinician"},${input.entityType || null},${input.entityId || null},${input.details || null},${input.outcome || "Success"})`;
 }

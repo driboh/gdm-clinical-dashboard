@@ -16,6 +16,15 @@ export function sendAudit(events: ClientAuditEvent | ClientAuditEvent[]) {
 
 export function auditDataChanges(before: AppData, after: AppData) {
   const events: ClientAuditEvent[] = [];
+  for (const patient of after.patients) {
+    const prior = before.patients.find((item) => item.id === patient.id);
+    if (!prior) events.push({ action: "patient.created", patientId: patient.id, entityType: "patient", entityId: patient.id });
+    else if (JSON.stringify(prior) !== JSON.stringify(patient)) events.push({ action: "patient.edited", patientId: patient.id, entityType: "patient", entityId: patient.id });
+  }
+  for (const reading of after.readings) {
+    const prior = before.readings.find((item) => item.id === reading.id);
+    if (!prior || JSON.stringify(prior) !== JSON.stringify(reading)) events.push({ action: "glucose.changed", patientId: reading.patientId, entityType: "glucose_reading", entityId: reading.id });
+  }
   for (const visit of after.visits) {
     const prior = before.visits.find((item) => item.id === visit.id);
     if (!prior) {

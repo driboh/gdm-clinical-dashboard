@@ -20,15 +20,22 @@ const initialAdminActor = (user: { id: string; email: string; name?: string }): 
 
 export async function signIn(_state: AuthState, formData: FormData): Promise<AuthState> {
   const { email, password } = credentials(formData);
-  if (!isInitialAdminEmail(email)) return { error: "This account is not authorized for the clinician dashboard." };
+  if (!isInitialAdminEmail(email)) {
+    await recordAudit({ action: "clinician.login.failed", source: "System", entityType: "session", details: "Unauthorized account", outcome: "Failure" }).catch(() => {});
+    return { error: "This account is not authorized for the clinician dashboard." };
+  }
   try {
     const result = await clinicianAuth().signIn.email({ email, password });
-    if (result.error) return { error: "Email or password was not accepted." };
+    if (result.error) {
+      await recordAudit({ action: "clinician.login.failed", source: "System", entityType: "session", details: "Credentials rejected", outcome: "Failure" });
+      return { error: "Email or password was not accepted." };
+    }
     const user = result.data?.user as { id: string; email: string; name?: string } | undefined;
     if (!user) return { error: "A secure session could not be created." };
     await provisionInitialAdmin(user);
     await recordAudit({ action: "clinician.login", actor: initialAdminActor(user), entityType: "session" });
   } catch {
+    await recordAudit({ action: "clinician.login.failed", source: "System", entityType: "session", details: "Authentication service error", outcome: "Failure" }).catch(() => {});
     return { error: "Secure sign-in is temporarily unavailable." };
   }
   redirect("/");
