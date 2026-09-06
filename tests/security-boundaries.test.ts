@@ -21,8 +21,18 @@ test("API authorization is not replaced by a redirecting UI middleware", () => {
 test("production auth has no localhost, debug, or hard-coded identity bypass", () => {
   const auth = read("app/lib/auth/server.ts") + read("app/lib/auth/authorization.ts");
   assert.doesNotMatch(auth, /localhost|trusted local|debug.*auth|bypass/i);
-  assert.match(auth, /NEON_AUTH_BASE_URL/);
+  assert.match(auth, /BETTER_AUTH_SECRET/);
+  assert.match(auth, /twoFactor\(/);
+  assert.match(auth, /twoFactorEnabled/);
+  assert.doesNotMatch(auth, /NEON_AUTH_BASE_URL|createNeonAuth/);
   assert.match(auth, /CLINICIAN_ADMIN_EMAILS/);
+});
+
+test("managed Neon Auth can no longer authorize production requests", () => {
+  const route = read("app/api/auth/[...path]/route.ts");
+  const server = read("app/lib/auth/server.ts");
+  assert.match(route, /toNextJsHandler\(auth\)/);
+  assert.doesNotMatch(route + server, /@neondatabase\/auth|NEON_AUTH_COOKIE_SECRET/);
 });
 
 test("no clinical browser persistence remains", () => {

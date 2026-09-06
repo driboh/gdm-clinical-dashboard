@@ -1,5 +1,6 @@
 import { portalDb } from "../../../db/portal";
-import { clinicianAuth } from "./server";
+import { headers } from "next/headers";
+import { auth } from "./server";
 
 export type ClinicianRole = "Admin" | "Clinician" | "Read-only staff";
 export type ClinicianContext = {
@@ -62,14 +63,28 @@ export async function provisionInitialAdmin(user: { id: string; email: string; n
     ON CONFLICT (email) DO UPDATE SET auth_user_id=excluded.auth_user_id,active=true,last_login_at=now()`;
 }
 
-export async function getClinicianContext(): Promise<ClinicianContext | null> {
-  const { data: session } = await clinicianAuth().getSession();
-  const user = session?.user as { id?: string; email?: string; name?: string } | undefined;
+export async function getAuthenticatedClinicianIdentity() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  const user = session?.user as { id?: string; email?: string; name?: string; twoFactorEnabled?: boolean } | undefined;
   if (!user?.id || !user.email) return null;
+  return { ...user, id: user.id, email: user.email.trim().toLowerCase(), twoFactorEnabled: user.twoFactorEnabled === true };
+}
+
+export async function getClinicianContext(): Promise<ClinicianContext | null> {
+  const user = await getAuthenticatedClinicianIdentity();
+  if (!user?.twoFactorEnabled) return null;
   await ensureSecuritySchema();
   const sql = portalDb();
-  const rows = await sql`SELECT auth_user_id,email,display_name,role,active FROM clinician_access
+  let rows = await sql`SELECT auth_user_id,email,display_name,role,active FROM clinician_access
     WHERE auth_user_id=${user.id} OR lower(email)=lower(${user.email}) LIMIT 1`;
+  if (!rows[0] && isInitialAdminEmail(user.email)) {
+    await provisionInitialAdmin(user);
+    rows = await sql`SELECT auth_user_id,email,display_name,role,active FROM clinician_access
+      WHERE auth_user_id=${user.id} LIMIT 1`;
+  } else if (rows[0] && rows[0].auth_user_id !== user.id) {
+    await sql`UPDATE clinician_access SET auth_user_id=${user.id},last_login_at=now() WHERE lower(email)=lower(${user.email})`;
+    rows[0].auth_user_id = user.id;
+  }
   const access = rows[0];
   if (!access || !access.active) return null;
   return {
@@ -81,8 +96,9 @@ export async function getClinicianContext(): Promise<ClinicianContext | null> {
 }
 
 export async function requireClinician(roles: ClinicianRole[] = ["Admin", "Clinician", "Read-only staff"]) {
-  const { data: session } = await clinicianAuth().getSession();
-  if (!session?.user) throw new AuthorizationError(401, "Sign-in required.");
+  const identity = await getAuthenticatedClinicianIdentity();
+  if (!identity) throw new AuthorizationError(401, "Sign-in required.");
+  if (!identity.twoFactorEnabled) throw new AuthorizationError(403, "Multi-factor authentication enrollment is required.");
   const context = await getClinicianContext();
   if (!context || !roles.includes(context.role)) throw new AuthorizationError(403, "You do not have access to this clinical resource.");
   return context;
