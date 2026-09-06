@@ -517,14 +517,9 @@ export default function Home() {
         const server = await clinicalDataApi.load();
         let initial = server.state ? migrateData(server.state) : null;
         if (!initial) {
-          // One-time transition from the former fictional-data browser store.
-          // The legacy value is deleted only after PostgreSQL confirms the save.
-          const raw = window.localStorage.getItem("gdm-clinical-data-v2");
-          initial = raw ? migrateData(JSON.parse(raw)) : migrateData(demoData);
+          initial = migrateData(demoData);
           await clinicalDataApi.save(initial);
           await patientPortalApi.sync(initial);
-          window.localStorage.removeItem("gdm-clinical-data-v2");
-          Object.keys(window.localStorage).filter((key) => key.startsWith("gdm-draft-")).forEach((key) => window.localStorage.removeItem(key));
         }
         if (active) setData0(initial);
       } catch {

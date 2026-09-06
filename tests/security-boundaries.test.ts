@@ -25,11 +25,9 @@ test("production auth has no localhost, debug, or hard-coded identity bypass", (
   assert.match(auth, /CLINICIAN_ADMIN_EMAILS/);
 });
 
-test("browser storage is only read for one-time migration and then removed", () => {
+test("no clinical browser persistence remains", () => {
   const dashboard = read("app/DashboardClient.tsx");
-  assert.equal((dashboard.match(/localStorage\.getItem/g) || []).length, 1);
-  assert.equal((dashboard.match(/localStorage\.setItem/g) || []).length, 0);
-  assert.match(dashboard, /localStorage\.removeItem\("gdm-clinical-data-v2"\)/);
+  assert.doesNotMatch(dashboard, /localStorage|sessionStorage|indexedDB/);
 });
 
 test("server state excludes portal secrets and server-authoritative audit data", () => {

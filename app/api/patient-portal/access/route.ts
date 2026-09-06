@@ -10,6 +10,7 @@ export async function POST(request: Request) {
     if (!body.patient?.id || !body.patient?.firstName || !body.patient?.lastName)
       return Response.json({ error: "A fictional patient record is required." }, { status: 400 });
     const sql = portalDb(), now = new Date().toISOString(), accessId = id(), token = portalToken(), expiresAt = expiresInDays(90);
+    const priorActive = await sql`SELECT id FROM patient_portal_access WHERE patient_id=${body.patient.id} AND status='Active' LIMIT 1`;
     await sql`INSERT INTO patients (id, first_name, last_name, mock, record, updated_at)
       VALUES (${body.patient.id}, ${body.patient.firstName}, ${body.patient.lastName}, ${Boolean(body.patient.mock)}, ${JSON.stringify(body.patient)}, ${now})
       ON CONFLICT (id) DO UPDATE SET first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,mock=EXCLUDED.mock,record=EXCLUDED.record,updated_at=EXCLUDED.updated_at`;
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
       ON CONFLICT (patient_id,reading_date) DO NOTHING`;
     await sql`INSERT INTO clinician_users (id,display_name,email) VALUES (${actor.userId},${actor.displayName},${actor.email}) ON CONFLICT (id) DO NOTHING`;
     await sql`INSERT INTO audit_events (id,patient_id,action,actor,actor_id,source,details) VALUES (${id()},${body.patient.id},'Portal created',${actor.displayName},${actor.userId},'Clinician','Fictional-data prototype')`;
+    if (priorActive.length) await sql`INSERT INTO audit_events (id,patient_id,action,actor,actor_id,source,details) VALUES (${id()},${body.patient.id},'Portal regenerated',${actor.displayName},${actor.userId},'Clinician','Previous access disabled; replacement created')`;
     return Response.json({ access:{id:accessId,patientId:body.patient.id,token,status:"Active",createdAt:now,expiresAt,showTargets:body.showTargets !== false} }, { status: 201 });
   } catch (error) { return authorizationResponse(error) || Response.json({ error: databaseError(error) }, { status: 503 }); }
 }
