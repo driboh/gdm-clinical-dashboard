@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { twoFactor } from "better-auth/plugins";
 import { Pool } from "pg";
+import { consumeRateLimit } from "../rateLimit.ts";
 
 const productionBuild = process.env.NEXT_PHASE === "phase-production-build";
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
@@ -19,13 +20,23 @@ const productionRuntime = process.env.NODE_ENV === "production";
  * database. The former managed Neon Auth schema is intentionally untouched as
  * a rollback artifact, but no production route reads it after this migration.
  */
-export function createClinicianAuth(database: Pool, options?: { baseURL?: string; secret?: string; secureCookies?: boolean; skipSchemaValidation?: boolean }) {
+export function createClinicianAuth(database: Pool, options?: { baseURL?: string; secret?: string; secureCookies?: boolean; skipSchemaValidation?: boolean; rateLimitStorage?: { consume: typeof consumeRateLimit } }) {
   return betterAuth({
   appName: "GDM Clinical Dashboard",
   baseURL: options?.baseURL || configuredOrigin || (productionRuntime ? canonicalOrigin : undefined),
   secret: options?.secret || authSecret || "build-time-placeholder-that-is-never-used-at-runtime",
   trustedOrigins: [canonicalOrigin, configuredOrigin, options?.baseURL].filter((value): value is string => Boolean(value)),
   database,
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 30,
+    customStorage: options?.rateLimitStorage || { consume: consumeRateLimit },
+    customRules: {
+      "/sign-in/email": { window: 15 * 60, max: 8 },
+      "/sign-up/email": { window: 60 * 60, max: 4 },
+    },
+  },
   emailAndPassword: { enabled: true, minPasswordLength: 12, maxPasswordLength: 128 },
   user: {
     modelName: "clinician_auth_user",
@@ -56,6 +67,7 @@ export function createClinicianAuth(database: Pool, options?: { baseURL?: string
   advanced: {
     cookiePrefix: "gdm_clinician",
     useSecureCookies: options?.secureCookies ?? productionRuntime,
+    ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
     database: { validateSchema: options?.skipSchemaValidation || productionBuild ? false : true },
   },
   plugins: [

@@ -79,6 +79,7 @@ test("Better Auth login, mandatory TOTP, recovery code, logout, and invalidation
     secret: "test-secret-at-least-thirty-two-characters-long",
     secureCookies: false,
     skipSchemaValidation: true,
+    rateLimitStorage: { consume: async () => ({ allowed: true, retryAfter: null }) },
   });
   const jar: CookieJar = new Map();
 

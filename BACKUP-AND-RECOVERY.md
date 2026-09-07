@@ -4,7 +4,7 @@ Status: planning document for the fictional-data prototype. Do not enter real PH
 
 ## Current database
 
-The production application uses the existing Neon PostgreSQL project connected to the existing Vercel project. Clinical state, portal data, clinician access, and audit events are stored in PostgreSQL. Neon Auth stores its managed identity/session data in the database's `neon_auth` schema.
+The production application uses the existing Neon PostgreSQL project connected to the existing Vercel project. Clinical state, portal data, clinician access, audit events, and the self-hosted Better Auth tables are stored in PostgreSQL. The former managed Neon Auth pathway is no longer used for application authorization; any remaining vendor-managed schema is a rollback artifact, not an active access path.
 
 ## Items the owner must verify before PHI
 
@@ -21,6 +21,8 @@ The production application uses the existing Neon PostgreSQL project connected t
 4. Validate schema migrations, record counts, referential integrity, clinician authorization, audit continuity, and several fictional patient/report workflows on the recovery branch.
 5. Obtain documented approval before promoting or reconnecting production.
 6. Preserve the former production branch until reconciliation and incident review are complete.
+
+Restore authentication and clinical tables from the same consistent recovery point. If session integrity or token confidentiality is uncertain, invalidate sessions. Before reconnecting production, validate a fictional Admin MFA login, role lookup, clinical read/write, portal submission/import, and audit continuity.
 
 ## Restore testing
 

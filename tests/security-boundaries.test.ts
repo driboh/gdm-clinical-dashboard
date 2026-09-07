@@ -46,3 +46,24 @@ test("server state excludes portal secrets and server-authoritative audit data",
   assert.match(api, /patientSubmissions:\s*\[\]/);
   assert.match(api, /auditEvents:\s*\[\]/);
 });
+
+test("production security headers cover transport, framing, content types, referrers, permissions, and CSP", () => {
+  const config = read("next.config.ts");
+  for (const header of ["Strict-Transport-Security", "X-Content-Type-Options", "Referrer-Policy", "X-Frame-Options", "Permissions-Policy", "Content-Security-Policy"])
+    assert.match(config, new RegExp(header));
+  assert.match(config, /frame-ancestors 'none'/);
+});
+
+test("authentication and patient portal abuse controls use shared PostgreSQL rate limiting", () => {
+  const limiter = read("app/lib/rateLimit.ts");
+  const auth = read("app/lib/auth/server.ts");
+  const portal = read("app/api/patient-portal/[token]/route.ts");
+  assert.match(limiter, /security_rate_limits/);
+  assert.match(limiter, /createHash\("sha256"\)/);
+  assert.match(auth, /customStorage: options\?\.rateLimitStorage \|\| \{ consume: consumeRateLimit \}/);
+  assert.match(portal, /portal-submit/);
+  assert.match(portal, /tooManyRequests/);
+  assert.match(portal, /rows\.length>31/);
+  assert.match(portal, /Each date may appear only once/);
+  assert.match(portal, /toISOString\(\)\.slice\(0,10\)===text/);
+});
