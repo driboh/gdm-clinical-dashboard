@@ -62,6 +62,11 @@ import { PatientPortalCard } from "./components/PatientPortalCard";
 import { SubmissionQueue } from "./components/SubmissionQueue";
 import { mergePortalSnapshot, patientPortalApi } from "./lib/patientPortalApi";
 import { clinicalDataApi } from "./lib/clinicalDataApi";
+import {
+  medicationChangeIsComplete,
+  normalizeMedicationChangeDraft,
+  type MedicationChangeDraft,
+} from "./lib/medicationChangeValidation";
 import { sendAudit } from "./lib/auditClient";
 import { signOut } from "./auth/actions";
 
@@ -499,6 +504,7 @@ export default function Home() {
   const [data, setData0] = useState<AppData>(demoData),
     [ready, setReady] = useState(false),
     [loadError, setLoadError] = useState(false),
+    [drafts, setDrafts] = useState<Record<string, unknown>>({}),
     [saved, setSaved] = useState("✓ All changes saved"),
     [page, setPage] = useState<Page>("Dashboard"),
     [patientId, setPatientId] = useState("p-sarah"),
@@ -520,7 +526,10 @@ export default function Home() {
           initial = migrateData(demoData);
           await clinicalDataApi.save(initial);
         }
-        if (active) setData0(initial);
+        if (active) {
+          setData0(initial);
+          setDrafts(server.drafts || {});
+        }
       } catch {
         if (active) {
           setSaved("Secure clinical database unavailable");
@@ -552,9 +561,11 @@ export default function Home() {
     const stamped = stampFinalizedVisits(next);
     setData0(stamped);
     setSaved("Saving…");
-    clinicalDataApi.save(stamped)
+    const persistence = clinicalDataApi.save(stamped);
+    persistence
       .then(() => setSaved("✓ All changes saved"))
       .catch(() => setSaved("Secure save failed"));
+    return persistence;
   };
   const patient =
     data.patients.find((x) => x.id === patientId) || data.patients[0];
@@ -767,10 +778,12 @@ export default function Home() {
         <VisitFlowFast
           p={patient}
           data={data}
+          savedDraft={drafts[patient.id]}
           close={() => setVisitOpen(false)}
           save={(next) => {
-            save(next);
+            const result = save(next);
             setVisitOpen(false);
+            return result;
           }}
           report={() => {
             setVisitOpen(false);
@@ -2771,17 +2784,22 @@ function VisitFlow({
 function VisitFlowFast({
   p,
   data,
+  savedDraft,
   close,
   save,
   report,
 }: {
   p: Patient;
   data: AppData;
+  savedDraft?: unknown;
   close: () => void;
-  save: (d: AppData) => void;
+  save: (d: AppData) => void | Promise<unknown>;
   report: () => void;
 }) {
-  const prior = data.visits
+  const persistedDraft = savedDraft && typeof savedDraft === "object"
+      ? savedDraft as { noMedChange?: boolean; medChange?: Partial<MedicationChangeDraft> }
+      : undefined,
+    prior = data.visits
       .filter((v) => v.patientId === p.id && v.status !== "Draft")
       .sort((a, b) => b.date.localeCompare(a.date))[0],
     activeMeds = data.medications.filter(
@@ -2821,20 +2839,16 @@ function VisitFlowFast({
     [follow, setFollow] = useState(data.settings.defaultFollowUp),
     [nextDate, setNextDate] = useState(p.nextFollowUp),
     [reviewDate, setReviewDate] = useState(p.nextFollowUp),
-    [noMedChange, setNoMedChange] = useState(true),
-    [medChange, setMedChange] = useState({
-      medication: therapyAtStart[0]?.medication || "",
-      previousDose: therapyAtStart[0]?.dose || "",
-      newDose: "",
-      previousTiming:
-        therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
-      newTiming:
-        therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
-      timing: therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
-      reason: "",
-      comments: "",
-      confirmed: false,
-    }),
+    [noMedChange, setNoMedChange] = useState(persistedDraft?.noMedChange ?? true),
+    [medChange, setMedChange] = useState(() => normalizeMedicationChangeDraft(
+      persistedDraft?.medChange,
+      {
+        medication: therapyAtStart[0]?.medication || "",
+        previousDose: therapyAtStart[0]?.dose || "",
+        previousTiming: therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
+        newTiming: therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
+      },
+    )),
     [dietUnchanged, setDietUnchanged] = useState(Boolean(prior)),
     [therapyUnchanged, setTherapyUnchanged] = useState(Boolean(prior)),
     [physicalUnchanged, setPhysicalUnchanged] = useState(Boolean(prior)),
@@ -2857,9 +2871,11 @@ function VisitFlowFast({
       prior?.deliveryPlanning || "",
     );
   useEffect(() => {
-    if (medChange.timing !== medChange.newTiming)
-      setMedChange((current) => ({ ...current, newTiming: current.timing }));
-  }, [medChange.timing]);
+    const timer = window.setTimeout(() => {
+      clinicalDataApi.saveDraft(p.id, { kind: "weekly-follow-up", noMedChange, medChange }).catch(() => {});
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [p.id, noMedChange, medChange]);
   const reviewReadings = filterReviewReadings(allReadings, period, start, end),
     stats = analyze(reviewReadings, data.settings),
     pattern = glucosePattern(stats),
@@ -2995,15 +3011,7 @@ function VisitFlowFast({
       );
   }, [confirming]);
   const finalize = () => {
-    if (
-      !noMedChange &&
-      (!medChange.confirmed ||
-        !medChange.medication ||
-        !medChange.previousDose ||
-        !medChange.newDose ||
-        !medChange.previousTiming ||
-        !medChange.newTiming)
-    ) {
+    if (!medicationChangeIsComplete(noMedChange, medChange)) {
       alert(
         "Complete and manually confirm the medication change, including pre-visit and post-visit timing, before finalizing.",
       );
@@ -3119,12 +3127,13 @@ function VisitFlowFast({
         therapy: formatTherapy(therapyAfterVisit),
         nextFollowUp: nextDate,
       };
-    save({
+    const persistence = save({
       ...data,
       patients: data.patients.map((x) => (x.id === p.id ? updated : x)),
       visits: [v, ...data.visits],
       medications: meds,
     });
+    Promise.resolve(persistence).then(() => clinicalDataApi.deleteDraft(p.id)).catch(() => {});
     report();
   };
   const SummaryBar = () => (
@@ -3578,6 +3587,13 @@ function VisitFlowFast({
                         }
                       />
                       <Field
+                        label="Previous Timing"
+                        value={medChange.previousTiming}
+                        onChange={(v) =>
+                          setMedChange({ ...medChange, previousTiming: v })
+                        }
+                      />
+                      <Field
                         label="New Dose"
                         value={medChange.newDose}
                         onChange={(v) =>
@@ -3585,10 +3601,10 @@ function VisitFlowFast({
                         }
                       />
                       <Field
-                        label="Timing"
-                        value={medChange.timing}
+                        label="New Timing"
+                        value={medChange.newTiming}
                         onChange={(v) =>
-                          setMedChange({ ...medChange, timing: v })
+                          setMedChange({ ...medChange, newTiming: v })
                         }
                       />
                       <Field
