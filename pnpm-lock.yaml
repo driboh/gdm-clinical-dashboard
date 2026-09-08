@@ -32,9 +32,21 @@ importers:
       pg:
         specifier: ^8.23.0
         version: 8.23.0
+      pg-connection-string:
+        specifier: 2.14.0
+        version: 2.14.0
+      pg-pool:
+        specifier: 3.14.0
+        version: 3.14.0(pg@8.23.0)
+      pg-protocol:
+        specifier: 1.16.0
+        version: 1.16.0
       pg-types:
         specifier: 2.2.0
         version: 2.2.0
+      pgpass:
+        specifier: 1.0.5
+        version: 1.0.5
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
