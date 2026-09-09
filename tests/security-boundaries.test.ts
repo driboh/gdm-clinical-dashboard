@@ -14,8 +14,26 @@ test("every private clinical API enforces a server-side clinician role", () => {
 });
 
 test("API authorization is not replaced by a redirecting UI middleware", () => {
-  const proxy = read("proxy.ts");
-  assert.doesNotMatch(proxy, /\/api\/clinical-data|\/api\/clinician-portal|\/api\/audit|\/api\/patient-portal\/access/);
+  const middleware = read("middleware.ts");
+  assert.match(middleware, /export async function middleware/);
+  assert.match(middleware, /auth\.api\.getSession\(\{ headers: request\.headers \}\)/);
+  assert.match(middleware, /NextResponse\.redirect\(new URL\("\/auth\/sign-in", request\.url\)\)/);
+  assert.match(middleware, /matcher:\s*\[\s*"\/",\s*"\/access-denied"/);
+  assert.match(middleware, /runtime:\s*"nodejs"/);
+  assert.doesNotMatch(middleware, /\/api\/clinical-data|\/api\/clinician-portal|\/api\/audit|\/api\/patient-portal\/access/);
+});
+
+test("AWS runtime secret loading is server-only, narrowly scoped, and does not log values", () => {
+  const loader = read("app/lib/awsRuntimeSecrets.ts");
+  const instrumentation = read("instrumentation.ts");
+  for (const name of ["DATABASE_URL", "BETTER_AUTH_SECRET"])
+    assert.match(loader, new RegExp(name));
+  assert.match(loader, /WithDecryption:\s*true/);
+  assert.match(loader, /process\.env\.DATABASE_URL\s*\|\|=/);
+  assert.match(loader, /process\.env\.BETTER_AUTH_SECRET\s*\|\|=/);
+  assert.doesNotMatch(loader + instrumentation, /console\.(?:log|info|warn|error)/);
+  assert.match(instrumentation, /process\.env\.NEXT_RUNTIME !== "nodejs"/);
+  assert.match(instrumentation, /await ensureAwsRuntimeSecrets\(\)/);
 });
 
 test("production auth has no localhost, debug, or hard-coded identity bypass", () => {
