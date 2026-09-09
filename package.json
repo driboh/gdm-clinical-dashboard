@@ -16,6 +16,7 @@
     "db:migrate:portal": "node scripts/migrate-portal.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.1127.0",
     "@neondatabase/serverless": "^1.1.0",
     "better-auth": "^1.7.3",
     "chart.js": "^4.5.1",

@@ -7,6 +7,7 @@ frontend:
         - pnpm install --frozen-lockfile
     build:
       commands:
+        - printf 'BETTER_AUTH_URL=%s\nCLINICIAN_ADMIN_EMAILS=%s\nGDM_RUNTIME_SECRET_PREFIX=%s\n' "$BETTER_AUTH_URL" "$CLINICIAN_ADMIN_EMAILS" "$GDM_RUNTIME_SECRET_PREFIX" > .env.production
         - pnpm run build
   artifacts:
     baseDirectory: .next
