@@ -3,6 +3,9 @@ import { nextCookies } from "better-auth/next-js";
 import { twoFactor } from "better-auth/plugins";
 import { Pool } from "pg";
 import { consumeRateLimit } from "../rateLimit.ts";
+import { ensureAwsRuntimeSecrets } from "../awsRuntimeSecrets.ts";
+
+await ensureAwsRuntimeSecrets();
 
 const productionBuild = process.env.NEXT_PHASE === "phase-production-build";
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;

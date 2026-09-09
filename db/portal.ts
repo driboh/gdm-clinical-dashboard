@@ -1,5 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
+import { ensureAwsRuntimeSecrets } from "../app/lib/awsRuntimeSecrets.ts";
+
+await ensureAwsRuntimeSecrets();
 
 export type DbRow = Record<string, unknown>;
 

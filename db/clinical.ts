@@ -1,4 +1,7 @@
 import { Pool, type PoolClient } from "pg";
+import { ensureAwsRuntimeSecrets } from "../app/lib/awsRuntimeSecrets.ts";
+
+await ensureAwsRuntimeSecrets();
 
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const globalForClinical = globalThis as unknown as { gdmClinicalPool?: Pool };

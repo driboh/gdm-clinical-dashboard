@@ -6,6 +6,6 @@ export async function register() {
   const parameterPrefix = process.env.GDM_RUNTIME_SECRET_PREFIX;
   if (!parameterPrefix) return;
 
-  const { loadAwsRuntimeSecrets } = await import("./app/lib/awsRuntimeSecrets");
-  await loadAwsRuntimeSecrets(parameterPrefix);
+  const { ensureAwsRuntimeSecrets } = await import("./app/lib/awsRuntimeSecrets");
+  await ensureAwsRuntimeSecrets();
 }
