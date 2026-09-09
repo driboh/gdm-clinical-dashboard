@@ -460,7 +460,7 @@ function Badge({
 }) {
   const label =
     children === "PROTOTYPE · FICTIONAL DATA"
-      ? "PROTOTYPE — DO NOT ENTER REAL PHI"
+      ? "Clinical Dashboard — Authorized users only"
       : children;
   return <em className={`badge ${tone}`}>{label}</em>;
 }
@@ -654,9 +654,7 @@ export default function Home() {
         <div className="dev">
           <AlertTriangle />
           <p>
-            <b>PROTOTYPE — DO NOT ENTER REAL PHI</b> Secure authentication,
-            encryption, access controls, audit logging, appropriate hosting and
-            BAAs are required before protected health information is used.
+            <b>Clinical Dashboard — Authorized users only</b>
           </p>
         </div>
         <div className="profile">
