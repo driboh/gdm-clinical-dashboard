@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import QRCode from "qrcode";
 import { demoData, newId, type AppData, type SubmittedReading } from "../app/lib/data.ts";
@@ -99,4 +100,13 @@ test("SQL date values remain date-only across a five-day portal import", () => {
   assert.ok(imported.patientSubmissions[0].submittedAt);
   assert.ok(imported.patientSubmissions[0].approvedAt);
   assert.ok(imported.patientSubmissions[0].importedAt);
+});
+
+test("patient portal uses welcoming care-team copy without the prototype warning", () => {
+  const page = fs.readFileSync("app/patient/submit/[token]/page.tsx", "utf8");
+  assert.match(page, /Share Your Blood Sugar Readings/);
+  assert.match(page, /Submit your glucose readings below for review by your care team\./);
+  assert.match(page, /For authorized patients only\. Please make sure you are using your/);
+  assert.doesNotMatch(page, /PROTOTYPE — FICTIONAL DATA ONLY/);
+  assert.doesNotMatch(page, /Do not enter real health information/);
 });

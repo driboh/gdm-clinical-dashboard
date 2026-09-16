@@ -117,13 +117,10 @@ export default function PatientGlucosePortal() {
           <p>Enter your blood sugar readings below.</p>
         </div>
       </header>
-      <div className="portal-warning">
-        <b>PROTOTYPE — FICTIONAL DATA ONLY</b>
-        <span>
-          Do not enter real health information. Fictional submissions are saved
-          to the shared prototype database for clinician review.
-        </span>
-      </div>
+      <section className="portal-introduction" aria-labelledby="portal-introduction-title">
+        <h2 id="portal-introduction-title">Share Your Blood Sugar Readings</h2>
+        <p>Submit your glucose readings below for review by your care team.</p>
+      </section>
       <section className="portal-welcome">
         <p>Hello, {portal.firstName}</p>
         <span>Monitoring: {portal.monitoring} after meals · mg/dL</span>
@@ -266,8 +263,14 @@ export default function PatientGlucosePortal() {
         )}
       </section>
       <footer>
-        This portal accepts readings only. It does not provide diagnosis or
-        medication advice. Contact your care team as directed.
+        <p>
+          This portal accepts readings only. It does not provide diagnosis or
+          medication advice. Contact your care team as directed.
+        </p>
+        <small>
+          For authorized patients only. Please make sure you are using your
+          personal portal link.
+        </small>
       </footer>
     </main>
   );
@@ -279,9 +282,6 @@ function PortalState({ title, message }: { title: string; message: string }) {
       <div className="patient-mark">G</div>
       <h1>{title}</h1>
       <p>{message}</p>
-      <div className="portal-warning">
-        <b>PROTOTYPE — FICTIONAL DATA ONLY</b>
-      </div>
     </main>
   );
 }
