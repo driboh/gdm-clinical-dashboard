@@ -1,6 +1,7 @@
 import { databaseError, id, json, portalDb } from "../../../db/portal";
 import { dateOnly } from "../../lib/dateOnly";
 import { authorizationResponse, requireClinician } from "../../lib/auth/authorization";
+import { withClinicalTransaction } from "../../../db/clinical";
 
 export const dynamic = "force-dynamic";
 type Choice = "keep"|"replace"|"skip";
@@ -30,18 +31,27 @@ export async function GET(){try{await requireClinician();return Response.json(aw
 export async function PATCH(request:Request){
  try{const actor=await requireClinician(["Admin","Clinician"]);const body=await request.json(),sql=portalDb(),provider=actor.displayName,submissionId=String(body.submissionId||""),submission=(await sql`SELECT * FROM patient_submissions WHERE id=${submissionId} LIMIT 1`)[0];if(!submission)return Response.json({error:"Submission not found"},{status:404});
   if(body.action==="view"){await sql`INSERT INTO audit_events (id,patient_id,submission_id,action,actor,details) VALUES (${id()},${submission.patient_id},${submissionId},'Clinician viewed submission',${provider},'Fictional-data prototype')`;return Response.json({ok:true});}
+  if(String(submission.status)!=="Pending")return Response.json({error:"Only pending submissions can be changed or imported."},{status:409});
   if(body.action==="reject"){await sql`UPDATE patient_submissions SET status='Rejected',rejected_by=${provider},rejected_at=now() WHERE id=${submissionId} AND status='Pending'`;await sql`INSERT INTO audit_events (id,patient_id,submission_id,action,actor) VALUES (${id()},${submission.patient_id},${submissionId},'Clinician rejected submission',${provider})`;return Response.json(await snapshot());}
   if(body.action==="edit"){
    for(const row of body.readings||[])await sql`UPDATE patient_submission_readings SET reading_date=${row.date},fasting=${n(row.fasting)},breakfast=${n(row.breakfast)},lunch=${n(row.lunch)},dinner=${n(row.dinner)},notes=${String(row.notes||"").slice(0,1000)},original_values=${JSON.stringify(row.original||null)},edit_history=${JSON.stringify(row.editHistory||[])} WHERE id=${row.id} AND submission_id=${submissionId}`;
    await sql`INSERT INTO audit_events (id,patient_id,submission_id,action,actor) VALUES (${id()},${submission.patient_id},${submissionId},'Clinician edited submitted value',${provider})`;return Response.json(await snapshot());
   }
   if(body.action==="import"){
-   for(const row of body.clinicianReadings||[])await sql`INSERT INTO patient_glucose_readings (id,patient_id,reading_date,fasting,breakfast,lunch,dinner,notes,source) VALUES (${row.id},${row.patientId},${row.date},${n(row.fasting)},${n(row.breakfast)},${n(row.lunch)},${n(row.dinner)},${String(row.notes||"")},${String(row.source||"Clinician Entry")}) ON CONFLICT (patient_id,reading_date) DO UPDATE SET fasting=excluded.fasting,breakfast=excluded.breakfast,lunch=excluded.lunch,dinner=excluded.dinner,notes=excluded.notes,updated_at=now()`;
-   const rows=await sql`SELECT * FROM patient_submission_readings WHERE submission_id=${submissionId}`;
-   for(const row of rows){const readingDate=dateOnly(row.reading_date),existing=(await sql`SELECT * FROM patient_glucose_readings WHERE patient_id=${submission.patient_id} AND reading_date=${readingDate} LIMIT 1`)[0],choice=(body.choices||{})[readingDate] as Choice|undefined,hasDuplicate=existing&&["fasting","breakfast","lunch","dinner"].some(k=>existing[k]!=null&&row[k]!=null);if(hasDuplicate&&!choice)return Response.json({error:"Choose how to handle each possible duplicate before importing.",duplicateDate:readingDate},{status:409});if(choice==="skip")continue;
-    if(existing){const replace=choice==="replace",pick=(oldValue:unknown,newValue:unknown)=>newValue==null?oldValue:replace?newValue:oldValue??newValue;await sql`UPDATE patient_glucose_readings SET fasting=${pick(existing.fasting,row.fasting)},breakfast=${pick(existing.breakfast,row.breakfast)},lunch=${pick(existing.lunch,row.lunch)},dinner=${pick(existing.dinner,row.dinner)},notes=${[existing.notes,row.notes].filter(Boolean).join(" · ")},source='Patient Portal',source_submission_id=${submissionId},updated_at=now() WHERE id=${existing.id}`;
-    }else await sql`INSERT INTO patient_glucose_readings (id,patient_id,reading_date,fasting,breakfast,lunch,dinner,notes,source,source_submission_id) VALUES (${id()},${submission.patient_id},${readingDate},${n(row.fasting)},${n(row.breakfast)},${n(row.lunch)},${n(row.dinner)},${String(row.notes||"")},'Patient Portal',${submissionId})`;}
-   await sql`UPDATE patient_submissions SET status='Imported',approved_by=${provider},approved_at=now(),imported_at=now() WHERE id=${submissionId} AND status='Pending'`;await sql`INSERT INTO audit_events (id,patient_id,submission_id,action,actor,details) VALUES (${id()},${submission.patient_id},${submissionId},'Clinician approved/imported submission',${provider},'Imported to permanent glucose log')`;return Response.json(await snapshot());
+   const conflict=await withClinicalTransaction(async client=>{
+    const locked=(await client.query("SELECT * FROM patient_submissions WHERE id=$1 FOR UPDATE",[submissionId])).rows[0];
+    if(!locked||String(locked.status)!=="Pending")return {error:"Only pending submissions can be imported."};
+    const rows=(await client.query("SELECT * FROM patient_submission_readings WHERE submission_id=$1 ORDER BY reading_date",[submissionId])).rows;
+    for(const row of rows){const readingDate=dateOnly(row.reading_date),existing=(await client.query("SELECT * FROM patient_glucose_readings WHERE patient_id=$1 AND reading_date=$2 LIMIT 1",[locked.patient_id,readingDate])).rows[0],choice=(body.choices||{})[readingDate] as Choice|undefined,hasDuplicate=existing&&["fasting","breakfast","lunch","dinner"].some(k=>existing[k]!=null&&row[k]!=null);if(hasDuplicate&&!choice)return {error:"Choose how to handle each possible duplicate before importing.",duplicateDate:readingDate};}
+    for(const row of rows){const readingDate=dateOnly(row.reading_date),existing=(await client.query("SELECT * FROM patient_glucose_readings WHERE patient_id=$1 AND reading_date=$2 LIMIT 1",[locked.patient_id,readingDate])).rows[0],choice=(body.choices||{})[readingDate] as Choice|undefined;if(choice==="skip")continue;
+     if(existing){const replace=choice==="replace",pick=(oldValue:unknown,newValue:unknown)=>newValue==null?oldValue:replace?newValue:oldValue??newValue;await client.query("UPDATE patient_glucose_readings SET fasting=$1,breakfast=$2,lunch=$3,dinner=$4,notes=$5,source='Patient Portal',source_submission_id=$6,updated_at=now() WHERE id=$7",[pick(existing.fasting,row.fasting),pick(existing.breakfast,row.breakfast),pick(existing.lunch,row.lunch),pick(existing.dinner,row.dinner),[existing.notes,row.notes].filter(Boolean).join(" · "),submissionId,existing.id]);
+     }else await client.query("INSERT INTO patient_glucose_readings (id,patient_id,reading_date,fasting,breakfast,lunch,dinner,notes,source,source_submission_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Patient Portal',$9)",[id(),locked.patient_id,readingDate,n(row.fasting),n(row.breakfast),n(row.lunch),n(row.dinner),String(row.notes||""),submissionId]);}
+    await client.query("UPDATE patient_submissions SET status='Imported',approved_by=$1,approved_at=now(),imported_at=now() WHERE id=$2",[provider,submissionId]);
+    await client.query("INSERT INTO audit_events (id,patient_id,submission_id,action,actor,details) VALUES ($1,$2,$3,'Clinician approved/imported submission',$4,'Imported to permanent glucose log')",[id(),locked.patient_id,submissionId,provider]);
+    return null;
+   });
+   if(conflict)return Response.json(conflict,{status:409});
+   return Response.json(await snapshot());
   }
   return Response.json({error:"Unsupported action"},{status:400});
  }catch(error){return authorizationResponse(error)||Response.json({error:databaseError(error)},{status:503})}

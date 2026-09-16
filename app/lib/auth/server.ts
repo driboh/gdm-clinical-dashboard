@@ -23,7 +23,7 @@ const productionRuntime = process.env.NODE_ENV === "production";
  * database. The former managed Neon Auth schema is intentionally untouched as
  * a rollback artifact, but no production route reads it after this migration.
  */
-export function createClinicianAuth(database: Pool, options?: { baseURL?: string; secret?: string; secureCookies?: boolean; skipSchemaValidation?: boolean; rateLimitStorage?: { consume: typeof consumeRateLimit } }) {
+export function createClinicianAuth(database: Pool, options?: { baseURL?: string; secret?: string; secureCookies?: boolean; skipSchemaValidation?: boolean; allowSignUp?: boolean; rateLimitStorage?: { consume: typeof consumeRateLimit } }) {
   return betterAuth({
   appName: "GDM Clinical Dashboard",
   baseURL: options?.baseURL || configuredOrigin || (productionRuntime ? canonicalOrigin : undefined),
@@ -40,7 +40,7 @@ export function createClinicianAuth(database: Pool, options?: { baseURL?: string
       "/sign-up/email": { window: 60 * 60, max: 4 },
     },
   },
-  emailAndPassword: { enabled: true, minPasswordLength: 12, maxPasswordLength: 128 },
+  emailAndPassword: { enabled: true, disableSignUp: !(options?.allowSignUp ?? process.env.ALLOW_CLINICIAN_SIGNUP === "true"), minPasswordLength: 12, maxPasswordLength: 128 },
   user: {
     modelName: "clinician_auth_user",
     fields: { emailVerified: "email_verified", createdAt: "created_at", updatedAt: "updated_at" },

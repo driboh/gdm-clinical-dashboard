@@ -38,8 +38,8 @@ export function SubmissionQueue({
       <div className="prototype-banner">
         <b>PROTOTYPE — FICTIONAL DATA ONLY</b>
         <span>
-          Submissions are stored locally in this browser and have not been
-          authenticated.
+          Submissions are stored in the shared PostgreSQL database and remain
+          unverified until clinician review.
         </span>
       </div>
       <section className="card table-wrap">
@@ -182,11 +182,6 @@ function ReviewSubmission({
         submission.id,
         provider,
         choices,
-        data.readings.filter(
-          (reading) =>
-            reading.patientId === submission.patientId &&
-            reading.source !== "Patient Portal",
-        ),
       );
       save(mergePortalSnapshot(data, snapshot));
       close();

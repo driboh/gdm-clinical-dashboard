@@ -69,6 +69,7 @@ import {
 } from "./lib/medicationChangeValidation";
 import { sendAudit } from "./lib/auditClient";
 import { signOut } from "./auth/actions";
+import { localDateToday } from "./lib/dateOnly";
 
 type Page =
   | "Dashboard"
@@ -350,6 +351,7 @@ function Field({
   value,
   type = "text",
   required = false,
+  readOnly = false,
   onChange,
 }: {
   label: string;
@@ -357,6 +359,7 @@ function Field({
   value: string | number;
   type?: string;
   required?: boolean;
+  readOnly?: boolean;
   onChange?: (v: string) => void;
 }) {
   return (
@@ -370,6 +373,7 @@ function Field({
         type={type}
         value={value}
         required={required}
+        readOnly={readOnly}
         onChange={(e) => onChange?.(e.target.value)}
       />
     </label>
@@ -516,6 +520,7 @@ export default function Home() {
     [reportId, setReportId] = useState<string | null>(null),
     [detailVisit, setDetailVisit] = useState<string | null>(null),
     [query, setQuery] = useState("");
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -557,15 +562,29 @@ export default function Home() {
     const timer = window.setInterval(refresh, 30000);
     return () => { active = false; window.clearInterval(timer); };
   }, [ready]);
-  const save = (next: AppData) => {
+  const save = async (next: AppData) => {
     const stamped = stampFinalizedVisits(next);
     setData0(stamped);
     setSaved("Saving…");
-    const persistence = clinicalDataApi.save(stamped);
-    persistence
-      .then(() => setSaved("✓ All changes saved"))
-      .catch(() => setSaved("Secure save failed"));
-    return persistence;
+    const persistence = saveQueue.current
+      .catch(() => undefined)
+      .then(() => clinicalDataApi.save(stamped));
+    saveQueue.current = persistence;
+    try {
+      await persistence;
+      setData0(stamped);
+      setSaved("✓ All changes saved");
+      return stamped;
+    } catch (error) {
+      try {
+        const server = await clinicalDataApi.load();
+        if (server.state) setData0(migrateData(server.state));
+      } catch {
+        // Preserve the visible failure state when the authoritative reload also fails.
+      }
+      setSaved("Secure save failed — reloaded last confirmed data");
+      throw error;
+    }
   };
   const patient =
     data.patients.find((x) => x.id === patientId) || data.patients[0];
@@ -777,9 +796,15 @@ export default function Home() {
           p={patient}
           data={data}
           savedDraft={drafts[patient.id]}
+          draftSaved={(draft) => setDrafts((current) => {
+            const next = { ...current };
+            if (draft) next[patient.id] = draft;
+            else delete next[patient.id];
+            return next;
+          })}
           close={() => setVisitOpen(false)}
-          save={(next) => {
-            const result = save(next);
+          save={async (next) => {
+            const result = await save(next);
             setVisitOpen(false);
             return result;
           }}
@@ -1006,6 +1031,17 @@ function PatientsPage({
         return a.nextFollowUp.localeCompare(b.nextFollowUp);
       if (sort === "GDM Type")
         return a.classification.localeCompare(b.classification);
+      if (sort === "Glucose Control") {
+        const aStats = analyze(
+            data.readings.filter((reading) => reading.patientId === a.id),
+            data.settings,
+          ),
+          bStats = analyze(
+            data.readings.filter((reading) => reading.patientId === b.id),
+            data.settings,
+          );
+        return bStats.atGoal - aStats.atGoal;
+      }
       return a.status.localeCompare(b.status);
     });
   return (
@@ -1348,7 +1384,7 @@ function Overview({
             </button>
           </div>
           {visits.slice(0, 4).map((v) => (
-            <VisitRow key={v.id} v={v} />
+            <VisitRow key={v.id} v={v} onClick={() => setTab("Visits")} />
           ))}
         </section>
         <section className="card snapshot">
@@ -1403,7 +1439,11 @@ function Glucose({
 }) {
   const [range, setRange] = useState("7"),
     [editing, setEditing] = useState<string | null>(null);
-  const update = (id: string, k: keyof Reading, v: string) =>
+  const update = (id: string, k: keyof Reading, v: string) => {
+    if (k === "date" && readings.some((reading) => reading.id !== id && reading.date === v)) {
+      alert("A glucose row already exists for this date. Edit that row instead.");
+      return;
+    }
     save({
       ...data,
       readings: data.readings.map((r) =>
@@ -1419,15 +1459,23 @@ function Glucose({
           : r,
       ),
     });
+  };
   const del = (id: string) => {
     if (confirm("Delete this glucose day?"))
       save({ ...data, readings: data.readings.filter((r) => r.id !== id) });
   };
   const add = () => {
+    const date = localDateToday();
+    const existing = readings.find((reading) => reading.date === date);
+    if (existing) {
+      setEditing(existing.id);
+      alert("Today already has a glucose row. The existing row is ready to edit.");
+      return;
+    }
     const r: Reading = {
       id: newId("reading"),
       patientId: p.id,
-      date: new Date().toISOString().slice(0, 10),
+      date,
       fasting: null,
       breakfast: null,
       lunch: null,
@@ -1444,7 +1492,7 @@ function Glucose({
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const date = d.toISOString().slice(0, 10);
+      const date = localDateToday(d);
       if (!existing.has(date))
         rows.push({
           id: newId("reading"),
@@ -1503,7 +1551,7 @@ function Glucose({
             </tr>
           </thead>
           <tbody>
-            {readings
+            {[...readings]
               .sort((a, b) => b.date.localeCompare(a.date))
               .map((r) => {
                 const edit = editing === r.id;
@@ -1677,11 +1725,18 @@ function Medications({
 }) {
   const [editing, setEditing] = useState<Medication | null>(null);
   const submit = (m: Medication) => {
+    const medications = data.medications.some((x) => x.id === m.id)
+      ? data.medications.map((x) => (x.id === m.id ? m : x))
+      : [...data.medications, m];
+    const activeTherapy = formatTherapy(snapshotActiveTherapy(medications, p.id));
     save({
       ...data,
-      medications: data.medications.some((x) => x.id === m.id)
-        ? data.medications.map((x) => (x.id === m.id ? m : x))
-        : [...data.medications, m],
+      medications,
+      patients: data.patients.map((patient) =>
+        patient.id === p.id
+          ? { ...patient, therapy: activeTherapy || "No active medication documented" }
+          : patient,
+      ),
     });
     setEditing(null);
   };
@@ -1690,7 +1745,7 @@ function Medications({
     submit({
       ...m,
       status: "Discontinued",
-      stopDate: new Date().toISOString().slice(0, 10),
+      stopDate: localDateToday(),
       history: [...m.history, `Discontinued ${new Date().toLocaleString()}`],
     });
   };
@@ -1710,7 +1765,7 @@ function Medications({
               type: "Other",
               dose: "",
               frequency: "",
-              startDate: new Date().toISOString().slice(0, 10),
+              startDate: localDateToday(),
               status: "Active",
               history: [],
             })
@@ -1947,6 +2002,26 @@ function PatientForm({
     setP({ ...p, [k]: v });
   const saveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (p.gravida && !/^\d+$/.test(p.gravida)) {
+      setError("Gravida must be a whole number.");
+      return;
+    }
+    if (p.para && !/^\d{1,4}$/.test(p.para)) {
+      setError("Para must be entered as a whole number or four-digit obstetric history.");
+      return;
+    }
+    if (p.heightFeet < 3 || p.heightFeet > 8 || p.heightInches < 0 || p.heightInches > 11) {
+      setError("Enter a valid height using 3–8 feet and 0–11 inches.");
+      return;
+    }
+    if (p.preWeight < 0 || p.preWeight > 1000 || p.currentWeight < 0 || p.currentWeight > 1000) {
+      setError("Weight must be between 0 and 1,000 pounds.");
+      return;
+    }
+    if (p.dob > localDateToday()) {
+      setError("Date of birth cannot be in the future.");
+      return;
+    }
     if (
       data.patients.some(
         (x) => x.mrn.toLowerCase() === p.mrn.toLowerCase() && x.id !== p.id,
@@ -2243,7 +2318,7 @@ function VisitFlow({
   ]);
   const needsChange =
     plan.includes("Initiate insulin") || plan.includes("Titrate insulin");
-  const finalize = () => {
+  const finalize = async () => {
     if (needsChange && !medChange.confirmed) {
       alert("Please manually confirm the medication change before finalizing.");
       return;
@@ -2252,7 +2327,7 @@ function VisitFlow({
       v: Visit = {
         id,
         patientId: p.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateToday(),
         type,
         gestationalAge: gestation(p.edd),
         classification,
@@ -2779,10 +2854,52 @@ function VisitFlow({
   );
 }
 
+type WeeklyVisitDraft = {
+  kind: "weekly-follow-up";
+  step: number;
+  period: string;
+  start: string;
+  end: string;
+  type: string;
+  diet: string;
+  activity: string;
+  barriers: string[];
+  history: string;
+  therapy: string[];
+  weight: string;
+  bp: string;
+  hr: string;
+  edema: string;
+  exam: string;
+  classification: Patient["classification"];
+  plan: string[];
+  follow: string;
+  nextDate: string;
+  reviewDate: string;
+  noMedChange: boolean;
+  medChange: MedicationChangeDraft;
+  dietUnchanged: boolean;
+  therapyUnchanged: boolean;
+  physicalUnchanged: boolean;
+  modality: string;
+  smbg: string;
+  dietFactors: string[];
+  symptoms: string[];
+  activityFrequency: string;
+  education: string[];
+  educationNotes: string;
+  fundalHeight: string;
+  fetalSurveillance: string;
+  deliveryPlanning: string;
+  assessment: string;
+  summary: string;
+};
+
 function VisitFlowFast({
   p,
   data,
   savedDraft,
+  draftSaved,
   close,
   save,
   report,
@@ -2790,12 +2907,13 @@ function VisitFlowFast({
   p: Patient;
   data: AppData;
   savedDraft?: unknown;
+  draftSaved: (draft: WeeklyVisitDraft | null) => void;
   close: () => void;
   save: (d: AppData) => void | Promise<unknown>;
   report: () => void;
 }) {
   const persistedDraft = savedDraft && typeof savedDraft === "object"
-      ? savedDraft as { noMedChange?: boolean; medChange?: Partial<MedicationChangeDraft> }
+      ? savedDraft as Partial<WeeklyVisitDraft>
       : undefined,
     prior = data.visits
       .filter((v) => v.patientId === p.id && v.status !== "Draft")
@@ -2807,36 +2925,41 @@ function VisitFlowFast({
   const [therapyAtStart] = useState(() =>
     snapshotActiveTherapy(data.medications, p.id),
   );
-  const [step, setStep] = useState(1),
+  const [step, setStep] = useState(persistedDraft?.step || 1),
     [confirming, setConfirming] = useState(false),
-    [period, setPeriod] = useState("7"),
-    [start, setStart] = useState(""),
-    [end, setEnd] = useState(""),
-    [type, setType] = useState("Follow-Up"),
-    [diet, setDiet] = useState(prior?.dietAdherence || "Good"),
-    [activity, setActivity] = useState(prior?.activity || "Regular activity"),
-    [barriers, setBarriers] = useState<string[]>(prior?.barriers || ["None"]),
-    [history, setHistory] = useState(prior?.intervalHistory || ""),
-    [therapy, setTherapy] = useState<string[]>([p.therapy]),
-    [weight, setWeight] = useState(String(p.currentWeight || "")),
+    [draftError, setDraftError] = useState(""),
+    [period, setPeriod] = useState(persistedDraft?.period || "7"),
+    [start, setStart] = useState(persistedDraft?.start || ""),
+    [end, setEnd] = useState(persistedDraft?.end || ""),
+    [type, setType] = useState(
+      persistedDraft?.type || (prior ? "Follow-Up" : "Initial GDM Consultation"),
+    ),
+    [diet, setDiet] = useState(persistedDraft?.diet || prior?.dietAdherence || "Good"),
+    [activity, setActivity] = useState(persistedDraft?.activity || prior?.activity || "Regular activity"),
+    [barriers, setBarriers] = useState<string[]>(persistedDraft?.barriers || prior?.barriers || ["None"]),
+    [history, setHistory] = useState(persistedDraft?.history ?? prior?.intervalHistory ?? ""),
+    [therapy, setTherapy] = useState<string[]>(persistedDraft?.therapy || [p.therapy]),
+    [weight, setWeight] = useState(persistedDraft?.weight ?? String(p.currentWeight || "")),
     [bp, setBp] = useState(
-      prior?.maternalFindings.match(/BP ([^;]+)/)?.[1] || "",
+      persistedDraft?.bp ?? prior?.maternalFindings.match(/BP ([^;]+)/)?.[1] ?? "",
     ),
     [hr, setHr] = useState(
-      prior?.maternalFindings.match(/HR ([^;]+)/)?.[1] || "",
+      persistedDraft?.hr ?? prior?.maternalFindings.match(/HR ([^;]+)/)?.[1] ?? "",
     ),
     [edema, setEdema] = useState(
-      prior?.maternalFindings.match(/edema ([^.;]+)/i)?.[1] || "None",
+      persistedDraft?.edema ?? prior?.maternalFindings.match(/edema ([^.;]+)/i)?.[1] ?? "None",
     ),
-    [exam, setExam] = useState(prior?.maternalFindings || ""),
-    [classification, setClassification] = useState(p.classification),
-    [plan, setPlan] = useState<string[]>([
-      "Continue current therapy",
+    [exam, setExam] = useState(persistedDraft?.exam ?? prior?.maternalFindings ?? ""),
+    [classification, setClassification] = useState(persistedDraft?.classification || p.classification),
+    [plan, setPlan] = useState<string[]>(persistedDraft?.plan || [
+      p.classification === "A1GDM" && p.therapy.toLowerCase().includes("diet")
+        ? "Continue diet-controlled management"
+        : "Continue current therapy",
       "Continue fasting and postprandial glucose monitoring",
     ]),
-    [follow, setFollow] = useState(data.settings.defaultFollowUp),
-    [nextDate, setNextDate] = useState(p.nextFollowUp),
-    [reviewDate, setReviewDate] = useState(p.nextFollowUp),
+    [follow, setFollow] = useState(persistedDraft?.follow || data.settings.defaultFollowUp),
+    [nextDate, setNextDate] = useState(persistedDraft?.nextDate ?? p.nextFollowUp),
+    [reviewDate, setReviewDate] = useState(persistedDraft?.reviewDate ?? p.nextFollowUp),
     [noMedChange, setNoMedChange] = useState(persistedDraft?.noMedChange ?? true),
     [medChange, setMedChange] = useState(() => normalizeMedicationChangeDraft(
       persistedDraft?.medChange,
@@ -2847,33 +2970,27 @@ function VisitFlowFast({
         newTiming: therapyAtStart[0]?.timing || therapyAtStart[0]?.frequency || "",
       },
     )),
-    [dietUnchanged, setDietUnchanged] = useState(Boolean(prior)),
-    [therapyUnchanged, setTherapyUnchanged] = useState(Boolean(prior)),
-    [physicalUnchanged, setPhysicalUnchanged] = useState(Boolean(prior)),
-    [modality, setModality] = useState(prior?.visitModality || "In-person"),
-    [smbg, setSmbg] = useState(prior?.smbgAdherence || "4 checks/day"),
+    [dietUnchanged, setDietUnchanged] = useState(persistedDraft?.dietUnchanged ?? Boolean(prior)),
+    [therapyUnchanged, setTherapyUnchanged] = useState(persistedDraft?.therapyUnchanged ?? Boolean(prior)),
+    [physicalUnchanged, setPhysicalUnchanged] = useState(persistedDraft?.physicalUnchanged ?? Boolean(prior)),
+    [modality, setModality] = useState(persistedDraft?.modality || prior?.visitModality || "In-person"),
+    [smbg, setSmbg] = useState(persistedDraft?.smbg || prior?.smbgAdherence || "4 checks/day"),
     [dietFactors, setDietFactors] = useState<string[]>(
-      prior?.dietFactors || [],
+      persistedDraft?.dietFactors || prior?.dietFactors || [],
     ),
-    [symptoms, setSymptoms] = useState<string[]>(prior?.symptoms || []),
+    [symptoms, setSymptoms] = useState<string[]>(persistedDraft?.symptoms || prior?.symptoms || []),
     [activityFrequency, setActivityFrequency] = useState(
-      prior?.activityFrequency || "",
+      persistedDraft?.activityFrequency || prior?.activityFrequency || "",
     ),
-    [education, setEducation] = useState<string[]>(prior?.education || []),
-    [educationNotes, setEducationNotes] = useState(prior?.educationNotes || ""),
-    [fundalHeight, setFundalHeight] = useState(prior?.fundalHeight || ""),
+    [education, setEducation] = useState<string[]>(persistedDraft?.education || prior?.education || []),
+    [educationNotes, setEducationNotes] = useState(persistedDraft?.educationNotes ?? prior?.educationNotes ?? ""),
+    [fundalHeight, setFundalHeight] = useState(persistedDraft?.fundalHeight ?? prior?.fundalHeight ?? ""),
     [fetalSurveillance, setFetalSurveillance] = useState(
-      prior?.fetalSurveillance || "",
+      persistedDraft?.fetalSurveillance ?? prior?.fetalSurveillance ?? "",
     ),
     [deliveryPlanning, setDeliveryPlanning] = useState(
-      prior?.deliveryPlanning || "",
+      persistedDraft?.deliveryPlanning ?? prior?.deliveryPlanning ?? "",
     );
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      clinicalDataApi.saveDraft(p.id, { kind: "weekly-follow-up", noMedChange, medChange }).catch(() => {});
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [p.id, noMedChange, medChange]);
   const reviewReadings = filterReviewReadings(allReadings, period, start, end),
     stats = analyze(reviewReadings, data.settings),
     pattern = glucosePattern(stats),
@@ -2881,15 +2998,45 @@ function VisitFlowFast({
       period === "custom"
         ? `${fmt(start)} to ${fmt(end)}`
         : `previous ${period} days`;
-  const presentationTherapy = formatTherapy(therapyAtStart),
+  const presentationTherapy = formatTherapy(therapyAtStart) || therapy.join(", ") || p.therapy,
     assessmentDraft = `${age(p.dob)}-year-old G${p.gravida}P${p.para} at ${gestation(p.edd)} with ${classification}${therapyAtStart.length ? ` on ${presentationTherapy}` : ""}, presenting for ${type === "Follow-Up" ? "follow-up" : type.toLowerCase()}. Review of the ${periodLabel} demonstrates ${pattern.toLowerCase()}${stats.fasting.count ? `, with ${stats.fasting.above} of ${stats.fasting.count} fasting readings above goal` : ""}. Overall, ${stats.atGoal}% of readings are within target. Diet adherence is ${diet.toLowerCase()} and patient reports ${activity.toLowerCase()}.`;
-  const [assessment, setAssessment] = useState(assessmentDraft),
+  const assessmentEdited = useRef(Boolean(persistedDraft?.assessment));
+  const [assessment, setAssessment] = useState(persistedDraft?.assessment || assessmentDraft),
     [summary, setSummary] = useState(
-      `${gestation(p.edd)} G${p.gravida}P${p.para} with ${classification}. ${period === "7" ? "Seven-day" : `${periodLabel[0].toUpperCase() + periodLabel.slice(1)}`} glucose log reviewed. Fasting values are above goal in ${stats.fasting.above}/${stats.fasting.count} readings while postprandial values are ${stats.postAbove < 30 ? "predominantly at goal" : "not fully at goal"}. Patient reports ${diet.toLowerCase()} dietary adherence and ${activity.toLowerCase()}. Continue ${p.therapy.toLowerCase()} and ${data.settings.monitoring} postprandial monitoring. Glucose log to be reviewed again ${follow}.`,
+      persistedDraft?.summary || `${gestation(p.edd)} G${p.gravida}P${p.para} with ${classification}. ${period === "7" ? "Seven-day" : `${periodLabel[0].toUpperCase() + periodLabel.slice(1)}`} glucose log reviewed. Fasting values are above goal in ${stats.fasting.above}/${stats.fasting.count} readings while postprandial values are ${stats.postAbove < 30 ? "predominantly at goal" : "not fully at goal"}. Patient reports ${diet.toLowerCase()} dietary adherence and ${activity.toLowerCase()}. Continue ${presentationTherapy.toLowerCase()} and ${data.settings.monitoring} postprandial monitoring. Glucose log to be reviewed again ${follow}.`,
     );
   useEffect(() => {
-    setAssessment(assessmentDraft);
+    if (!assessmentEdited.current) setAssessment(assessmentDraft);
   }, [period, start, end, diet, activity, classification, type]);
+  const draftPayload: WeeklyVisitDraft = {
+    kind: "weekly-follow-up", step, period, start, end, type, diet, activity,
+    barriers, history, therapy, weight, bp, hr, edema, exam, classification,
+    plan, follow, nextDate, reviewDate, noMedChange, medChange, dietUnchanged,
+    therapyUnchanged, physicalUnchanged, modality, smbg, dietFactors, symptoms,
+    activityFrequency, education, educationNotes, fundalHeight,
+    fetalSurveillance, deliveryPlanning, assessment, summary,
+  };
+  const persistDraft = async () => {
+    try {
+      await clinicalDataApi.saveDraft(p.id, draftPayload);
+      draftSaved(draftPayload);
+      setDraftError("");
+    } catch {
+      setDraftError("Draft could not be saved to the clinical database.");
+      throw new Error("Draft save failed");
+    }
+  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      persistDraft().catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [step, period, start, end, type, diet, activity, barriers, history, therapy,
+    weight, bp, hr, edema, exam, classification, plan, follow, nextDate,
+    reviewDate, noMedChange, medChange, dietUnchanged, therapyUnchanged,
+    physicalUnchanged, modality, smbg, dietFactors, symptoms, activityFrequency,
+    education, educationNotes, fundalHeight, fetalSurveillance, deliveryPlanning,
+    assessment, summary, p.id]);
   const planGroups = {
     "Glucose Monitoring": [
       "Continue fasting and postprandial glucose monitoring",
@@ -2967,7 +3114,7 @@ function VisitFlowFast({
       provisional: Visit = {
         id: "validation",
         patientId: p.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: localDateToday(),
         type,
         gestationalAge: gestation(p.edd),
         classification,
@@ -3008,7 +3155,7 @@ function VisitFlowFast({
         `Clinical consistency review:\n\n${warnings.map((x) => `• ${x}`).join("\n")}`,
       );
   }, [confirming]);
-  const finalize = () => {
+  const finalize = async () => {
     if (!medicationChangeIsComplete(noMedChange, medChange)) {
       alert(
         "Complete and manually confirm the medication change, including pre-visit and post-visit timing, before finalizing.",
@@ -3016,7 +3163,7 @@ function VisitFlowFast({
       return;
     }
     const id = newId("visit"),
-      date = new Date().toISOString().slice(0, 10),
+      date = localDateToday(),
       maternal = `Weight ${weight || "not recorded"}; BP ${bp || "not recorded"}; HR ${hr || "not recorded"}; edema ${edema}. ${exam}`,
       base =
         therapyAtStart.find(
@@ -3081,7 +3228,7 @@ function VisitFlowFast({
       medicationChangeDetails: change ? [clone(change)] : [],
       currentMedication: therapyAtStart[0],
       newMedication: change?.to,
-      currentTherapy: formatTherapy(therapyAtStart),
+      currentTherapy: presentationTherapy,
       patientSnapshot: patientSnapshot(p),
       glucosePeriod: period,
       glucoseStart: start,
@@ -3122,17 +3269,22 @@ function VisitFlowFast({
         ...p,
         currentWeight: Number(weight) || p.currentWeight,
         classification: classification as Patient["classification"],
-        therapy: formatTherapy(therapyAfterVisit),
+        therapy: formatTherapy(therapyAfterVisit) || presentationTherapy,
         nextFollowUp: nextDate,
       };
-    const persistence = save({
-      ...data,
-      patients: data.patients.map((x) => (x.id === p.id ? updated : x)),
-      visits: [v, ...data.visits],
-      medications: meds,
-    });
-    Promise.resolve(persistence).then(() => clinicalDataApi.deleteDraft(p.id)).catch(() => {});
-    report();
+    try {
+      await save({
+        ...data,
+        patients: data.patients.map((x) => (x.id === p.id ? updated : x)),
+        visits: [v, ...data.visits],
+        medications: meds,
+      });
+      await clinicalDataApi.deleteDraft(p.id);
+      draftSaved(null);
+      report();
+    } catch {
+      alert("The visit was not finalized because it could not be saved securely. Your draft remains available.");
+    }
   };
   const SummaryBar = () => (
     <div className="visit-glucose-summary">
@@ -3542,7 +3694,10 @@ function VisitFlowFast({
                 <textarea
                   rows={7}
                   value={assessment}
-                  onChange={(e) => setAssessment(e.target.value)}
+                  onChange={(e) => {
+                    assessmentEdited.current = true;
+                    setAssessment(e.target.value);
+                  }}
                 />
               </label>
             </Section>
@@ -3695,7 +3850,15 @@ function VisitFlowFast({
           )}
         </div>
         <div className="modal-foot">
-          <Btn kind="secondary" onClick={close}>
+          {draftError && <span className="form-error" role="alert">{draftError}</span>}
+          <Btn kind="secondary" onClick={async () => {
+            try {
+              await persistDraft();
+              close();
+            } catch {
+              return;
+            }
+          }}>
             Save Draft & Close
           </Btn>
           <span>{step} of 5</span>
@@ -3915,25 +4078,46 @@ function VersionedVisitDetail({
       snapshot: JSON.stringify({ ...updated, versions: undefined }),
     };
     updated.versions = [...baseVersions, versionRecord];
+    const latestOther = data.visits
+        .filter((v) => v.patientId === visit.patientId && v.id !== visit.id)
+        .sort((a, b) =>
+          (b.date + (b.finalizedAt || "")).localeCompare(a.date + (a.finalizedAt || "")),
+        )[0],
+      isMostRecent =
+        !latestOther ||
+        (visit.date + (visit.finalizedAt || "")).localeCompare(
+          latestOther.date + (latestOther.finalizedAt || ""),
+        ) >= 0,
+      revisionChange =
+        draft.medicationChangeDetails?.[0] ||
+        parseRecordedMedicationChange(draft.medicationChanges || ""),
+      revisedPostVisitTherapy =
+        draft.therapyAfterVisit?.length
+          ? draft.therapyAfterVisit
+          : applyRegimenChange(draft.therapyAtStart || [], revisionChange);
+    if (medicationChanged) {
+      updated.therapyAfterVisit = clone(revisedPostVisitTherapy);
+      updated.medicationChangeDetails = revisionChange ? [clone(revisionChange)] : [];
+      updated.newMedication = revisionChange?.to;
+      versionRecord.snapshot = JSON.stringify({ ...updated, versions: undefined });
+    }
+    if (medicationChanged && medSync === "yes" && !isMostRecent) {
+      alert("A historical visit cannot replace the patient's current medication list. Save the documentation revision without medication synchronization, then reconcile the current regimen separately.");
+      return;
+    }
+    if (medicationChanged && medSync === "yes" && !revisionChange && !draft.therapyAfterVisit?.length) {
+      alert("Structured previous and updated medication regimens are required before the current medication list can be synchronized.");
+      return;
+    }
     let patients = data.patients;
     if (patient) {
-      const latest = data.visits
-          .filter((v) => v.patientId === patient.id && v.id !== visit.id)
-          .sort((a, b) =>
-            (b.date + b.finalizedAt).localeCompare(a.date + a.finalizedAt),
-          )[0],
-        isMostRecent =
-          !latest ||
-          (visit.date + (visit.finalizedAt || "")).localeCompare(
-            latest.date + (latest.finalizedAt || ""),
-          ) >= 0;
       patients = patients.map((p) =>
         p.id !== patient.id
           ? p
           : {
               ...p,
               ...(medicationChanged && medSync === "yes"
-                ? { therapy: draft.currentTherapy || p.therapy }
+                ? { therapy: formatTherapy(revisedPostVisitTherapy) || p.therapy }
                 : {}),
               ...(isMostRecent && draft.nextFollowUp !== visit.nextFollowUp
                 ? { nextFollowUp: draft.nextFollowUp }
@@ -3942,17 +4126,14 @@ function VersionedVisitDetail({
       );
     }
     let medications = data.medications;
-    if (medicationChanged && medSync === "yes")
-      medications = medications.map((m) =>
-        m.patientId === visit.patientId && m.status === "Active"
-          ? {
-              ...m,
-              history: [
-                ...m.history,
-                `Visit version ${version} revision confirmed by ${data.settings.displayName}: ${finalReason}`,
-              ],
-            }
-          : m,
+    if (medicationChanged && medSync === "yes" && revisionChange)
+      medications = updateActiveMedicationList(
+        data.medications,
+        visit.patientId,
+        visit.id,
+        visit.date,
+        revisionChange,
+        data.settings.displayName,
       );
     save({
       ...data,
@@ -4567,7 +4748,7 @@ function SettingsPage({
     a.href = URL.createObjectURL(
       new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
     );
-    a.download = `gdm-prototype-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `gdm-prototype-backup-${localDateToday()}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -4579,8 +4760,8 @@ function SettingsPage({
       try {
         const parsed = JSON.parse(String(r.result));
         if (!parsed.patients || !parsed.settings) throw Error();
-        if (confirm("Replace all prototype data with this backup?"))
-          save(parsed);
+        if (confirm("Import this prototype backup? Existing server records not contained in the file will be preserved."))
+          save(migrateData(parsed));
       } catch {
         alert("This is not a valid GDM prototype backup.");
       }
@@ -4612,17 +4793,17 @@ function SettingsPage({
           <Field
             label="Name"
             value={s.providerName}
-            onChange={(v) => setS({ ...s, providerName: v })}
+            readOnly
           />
           <Field
             label="Credentials"
             value={s.credentials}
-            onChange={(v) => setS({ ...s, credentials: v })}
+            readOnly
           />
           <Field
             label="Display Name"
             value={s.displayName}
-            onChange={(v) => setS({ ...s, displayName: v })}
+            readOnly
           />
           <Field
             label="Practice"
@@ -4734,13 +4915,13 @@ function SettingsPage({
             onClick={() => {
               if (
                 confirm(
-                  "Reset all local changes and restore the three fictional demo patients?",
+                  "Restore/update the three fictional demo patients? Other server records will be preserved.",
                 )
               )
                 save(clone(demoData));
             }}
           >
-            Reset Demo Data
+            Restore Demo Records
           </Btn>
         </div>
       </Section>
@@ -4766,10 +4947,10 @@ function ReportView({
       (m) => m.patientId === p.id && m.status === "Active",
     ),
     r: ReportType = {
-      id: `report-${p.id}-${new Date().toISOString().slice(0, 10)}`,
+      id: `report-${p.id}-${localDateToday()}`,
       patientId: p.id,
       visitId: visit?.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateToday(),
       type: "GDM Management Report",
       status: "Final",
     };
@@ -4959,10 +5140,10 @@ function ReportViewEnhanced({
       (m) => m.patientId === p.id && m.status === "Active",
     ),
     reportRecord: ReportType = {
-      id: `report-${p.id}-${visit?.id || new Date().toISOString().slice(0, 10)}`,
+      id: `report-${p.id}-${visit?.id || localDateToday()}`,
       patientId: p.id,
       visitId: visit?.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateToday(),
       type: "GDM Management Report",
       status: "Final",
     };
@@ -5301,7 +5482,7 @@ function ReportViewPdf({
   reportId?: string;
   close: () => void;
   backToVisit: () => void;
-  saveReport: (r: ReportType) => void;
+  saveReport: (r: ReportType) => void | Promise<unknown>;
 }) {
   const reportRef = useRef<HTMLElement>(null),
     [downloading, setDownloading] = useState(false),
@@ -5463,7 +5644,8 @@ function ReportViewPdf({
     setDownloading(true);
     setPdfError("");
     let chartCanvas: HTMLCanvasElement | null = null,
-      chartImage: HTMLImageElement | null = null;
+      chartImage: HTMLImageElement | null = null,
+      pdfCreated = false;
     try {
       await document.fonts?.ready;
       await new Promise<void>((resolve) =>
@@ -5500,11 +5682,14 @@ function ReportViewPdf({
         })
         .from(source)
         .save();
-      saveReport(reportRecord);
+      pdfCreated = true;
+      await saveReport(reportRecord);
     } catch (error) {
       console.error("Local PDF generation failed", error);
       setPdfError(
-        "PDF generation failed. Please use Print while this prototype is being reviewed.",
+        pdfCreated
+          ? "The PDF downloaded, but its report record could not be saved. Please keep this window open and try again."
+          : "PDF generation failed. Please use Print while this prototype is being reviewed.",
       );
     } finally {
       if (chartCanvas && chartImage?.isConnected)

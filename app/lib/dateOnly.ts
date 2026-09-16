@@ -8,3 +8,11 @@ export function dateOnly(value: unknown): string {
   if (Number.isNaN(parsed.getTime())) return "";
   return parsed.toISOString().slice(0, 10);
 }
+
+/** Return today's local clinical calendar date without a UTC day shift. */
+export function localDateToday(now = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}

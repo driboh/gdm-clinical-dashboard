@@ -1,6 +1,7 @@
 import type {Medication,MedicationRegimen,Patient,Reading,Settings,Visit} from "./data.ts";
 import {analyze,bmi,fmt,gestationAt} from "./clinical.ts";
 import {formatMedicationChange,formatRegimen,formatTherapy,parseRecordedMedicationChange} from "./medicationTimeline.ts";
+import {localDateToday} from "./dateOnly.ts";
 
 export type ReportModel=ReturnType<typeof buildReportModel>;
 
@@ -60,7 +61,7 @@ export function maternalLine(patient:Patient,visit?:Visit){
 }
 
 export function buildReportModel(patient:Patient,visit:Visit|undefined,readings:Reading[],medications:Medication[],settings:Settings){
- const visitDate=visit?.date||new Date().toISOString().slice(0,10);
+ const visitDate=visit?.date||localDateToday();
  const gestationalAge=gestationAt(patient.edd,visitDate);
  const stats=analyze(readings,settings);
  const statements=Object.fromEntries(keys.map(key=>[key,readingStatement(stats,key)])) as Record<typeof keys[number],string>;

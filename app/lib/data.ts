@@ -1,3 +1,5 @@
+import { localDateToday } from "./dateOnly.ts";
+
 export type Patient={id:string;firstName:string;lastName:string;mrn:string;dob:string;edd:string;gravida:string;para:string;referringOb:string;obPractice:string;site:string;phone:string;language:string;heightFeet:number;heightInches:number;preWeight:number;currentWeight:number;pregnancyType:string;classification:"A1GDM"|"A2GDM"|"Pending";therapy:string;diagnosisDate:string;notes:string;nextFollowUp:string;status:string;archived:boolean;mock?:boolean;diagnosisTiming?:string;allergies?:string};
 export type ReadingSource="Clinician Entry"|"Patient Portal"|"Uploaded CSV"|"Device Import";
 export type Reading={id:string;patientId:string;date:string;fasting:number|null;breakfast:number|null;lunch:number|null;dinner:number|null;notes:string;source?:ReadingSource;sourceSubmissionId?:string};
@@ -17,7 +19,7 @@ export type Report={id:string;patientId:string;visitId?:string;visitVersion?:num
 export type Settings={providerName:string;credentials:string;displayName:string;role:string;practice:string;npi:string;phone:string;fax:string;signature?:string;fastingTarget:number;oneHourTarget:number;twoHourTarget:number;monitoring:"1 hour"|"2 hour";patternThresholdPct?:number;showPatientPortalTargets?:boolean;sites:string;defaultFollowUp:string};
 export type AppData={patients:Patient[];readings:Reading[];medications:Medication[];visits:Visit[];reports:Report[];portalAccess:PatientPortalAccess[];patientSubmissions:PatientSubmission[];auditEvents:AuditEvent[];settings:Settings};
 
-const days=(n:number)=>{const d=new Date();d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+const days=(n:number)=>{const d=new Date(`${localDateToday()}T12:00:00`);d.setDate(d.getDate()+n);return localDateToday(d)};
 const readingSet=(patientId:string,pattern:"fasting"|"dinner"|"goal")=>Array.from({length:7},(_,i)=>{const date=days(i-6);const base=pattern==="fasting"?[98,96,92,99,98,94,96]:pattern==="dinner"?[90,91,93,92,94,91,92]:[87,90,91,89,93,88,90];const dinner=pattern==="dinner"?[146,137,149,142,135,148,139]:pattern==="goal"?[124,130,128,132,126,129,131]:[132,138,142,136,145,137,139];return{id:`${patientId}-r${i}`,patientId,date,fasting:base[i],breakfast:124+i,lunch:118+i,dinner:dinner[i],notes:i===2&&pattern!=="goal"?"Meal timing discussed":""}});
 const initialSampleReadings=Array.from({length:6},(_,i)=>({id:`p-sarah-r${i}`,patientId:"p-sarah",date:days(i-5),fasting:[90,91,92,93,94,96][i],breakfast:[118,122,126,120,124,128][i],lunch:[121,125,119,127,123,129][i],dinner:[128,132,134,129,136,131][i],notes:i===5?"Fictional sample reading":""}));
 const followUpSampleReadings=Array.from({length:6},(_,i)=>({id:`p-rebecca-r${i}`,patientId:"p-rebecca",date:days(i-5),fasting:[96,97,98,99,100,101][i],breakfast:[120,121,122,123,124,125][i],lunch:[141,142,130,131,132,133][i],dinner:[141,142,143,144,130,131][i],notes:i===5?"Fictional sample reading":""}));

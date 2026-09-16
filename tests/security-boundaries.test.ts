@@ -53,6 +53,13 @@ test("managed Neon Auth can no longer authorize production requests", () => {
   assert.doesNotMatch(route + server, /@neondatabase\/auth|NEON_AUTH_COOKIE_SECRET/);
 });
 
+test("clinician self-registration is disabled unless explicitly enabled", () => {
+  const auth = read("app/lib/auth/server.ts");
+  const page = read("app/auth/sign-in/page.tsx");
+  assert.match(auth, /disableSignUp: !\(options\?\.allowSignUp \?\? process\.env\.ALLOW_CLINICIAN_SIGNUP === "true"\)/);
+  assert.match(page, /ALLOW_CLINICIAN_SIGNUP === "true"/);
+});
+
 test("no clinical browser persistence remains", () => {
   const dashboard = read("app/DashboardClient.tsx");
   assert.doesNotMatch(dashboard, /localStorage|sessionStorage|indexedDB/);

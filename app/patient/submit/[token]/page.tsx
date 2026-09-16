@@ -4,8 +4,9 @@ import { useParams } from "next/navigation";
 import type { SubmittedReading } from "../../../lib/data";
 import { newId } from "../../../lib/data";
 import { patientPortalApi } from "../../../lib/patientPortalApi";
+import { localDateToday } from "../../../lib/dateOnly";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localDateToday();
 const blank = (date = today()): SubmittedReading => ({
   id: newId("submitted-reading"),
   date,

@@ -2,6 +2,7 @@ import type {ClinicalSummaryData,Medication,Patient,Visit} from "./data.ts";
 import {analyze,fmt,gestationAt} from "./clinical.ts";
 import {regimenText} from "./reportModel.ts";
 import {formatMedicationChange,formatRegimen,formatTherapy,parseRecordedMedicationChange} from "./medicationTimeline.ts";
+import {localDateToday} from "./dateOnly.ts";
 
 type Stats=ReturnType<typeof analyze>;
 
@@ -31,7 +32,7 @@ export function buildClinicalSummary(p:Patient,v:Visit|undefined,meds:Medication
  const plans=reportPlanItems(p,v);
  return {
   visitKind:initial?"Initial":"Follow-Up",
-  gestationalAge:gestationAt(p.edd,v?.date||new Date().toISOString().slice(0,10)),classification:v?.classification==="A1GDM"&&(v.currentTherapy||p.therapy).toLowerCase().includes("diet")?"A1GDM — diet controlled":v?.classification==="A2GDM"?"A2GDM — medication treated":v?.classification||p.classification,
+  gestationalAge:gestationAt(p.edd,v?.date||localDateToday()),classification:v?.classification==="A1GDM"&&(v.currentTherapy||p.therapy).toLowerCase().includes("diet")?"A1GDM — diet controlled":v?.classification==="A2GDM"?"A2GDM — medication treated":v?.classification||p.classification,
   reason:initial?(p.diagnosisTiming||`Newly diagnosed gestational diabetes after abnormal diagnostic testing${p.diagnosisDate?` on ${fmt(p.diagnosisDate)}`:""}.`):"",
   therapy:v?.therapyAtStart?.length?formatTherapy(v.therapyAtStart):regimenText(structuredChange?.from)||regimenText(v?.currentMedication)||medicationText(meds,v?.currentTherapy||p.therapy),therapyLabel:structuredChange?"Therapy on Presentation":"Current Therapy",updatedTherapy:v?.therapyAfterVisit?.length?formatTherapy(v.therapyAfterVisit):regimenText(structuredChange?.to)||regimenText(v?.newMedication),reviewPeriod:period==="custom"?"Custom date range":`Last ${period} days`,
   pattern:initial?(hasData?pattern:"Newly starting home glucose monitoring"):pattern,

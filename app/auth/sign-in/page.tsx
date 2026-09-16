@@ -10,5 +10,5 @@ export default async function SignInPage() {
   } catch {
     // The form displays even when auth configuration is incomplete.
   }
-  return <AuthForm />;
+  return <AuthForm allowSetup={process.env.ALLOW_CLINICIAN_SIGNUP === "true"} />;
 }

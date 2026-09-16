@@ -11,7 +11,7 @@ const friendlyError = (message?: string) => {
   return message;
 };
 
-export function AuthForm() {
+export function AuthForm({ allowSetup = false }: { allowSetup?: boolean }) {
   const [setup, setSetup] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export function AuthForm() {
     const email = String(form.get("email") || "").trim().toLowerCase();
     const password = String(form.get("password") || "");
     try {
-      if (setup) {
+      if (setup && allowSetup) {
         const result = await authClient.signUp.email({ email, password, name: "Daniel Riboh, PA-C" });
         if (result.error) setError(friendlyError(result.error.message));
         else window.location.assign("/auth/mfa/setup");
@@ -54,9 +54,11 @@ export function AuthForm() {
           {error && <p className="auth-error" role="alert">{error}</p>}
           <button disabled={pending} type="submit">{pending ? "Please wait…" : setup ? "Create credential and enroll MFA" : "Sign in"}</button>
         </form>
-        <button className="auth-switch" type="button" onClick={() => { setSetup((value) => !value); setError(""); }}>
-          {setup ? "Return to sign in" : "One-time Better Auth migration setup"}
-        </button>
+        {allowSetup && (
+          <button className="auth-switch" type="button" onClick={() => { setSetup((value) => !value); setError(""); }}>
+            {setup ? "Return to sign in" : "One-time Better Auth migration setup"}
+          </button>
+        )}
       </section>
     </main>
   );

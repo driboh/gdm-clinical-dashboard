@@ -12,5 +12,5 @@ export const patientPortalApi={
  portal:(token:string)=>request<{firstName:string;monitoring:"1 hour"|"2 hour";showTargets:boolean;fastingTarget:number;postMealTarget:number;recent:SubmittedReading[]}>(`/api/patient-portal/${encodeURIComponent(token)}`),
  submit:(token:string,readings:SubmittedReading[])=>request<{submissionId:string;submittedAt:string;persisted:true}>(`/api/patient-portal/${encodeURIComponent(token)}`,{method:"POST",body:JSON.stringify({readings})}),
  action:(action:"view"|"edit"|"reject"|"import",submissionId:string,provider:string,extra:Record<string,unknown>={})=>request<PortalSnapshot>("/api/clinician-portal",{method:"PATCH",body:JSON.stringify({action,submissionId,provider,...extra})}),
- import:(submissionId:string,provider:string,choices:Record<string,DuplicateChoice>,clinicianReadings:Reading[]=[])=>patientPortalApi.action("import",submissionId,provider,{choices,clinicianReadings})
+ import:(submissionId:string,provider:string,choices:Record<string,DuplicateChoice>)=>patientPortalApi.action("import",submissionId,provider,{choices})
 };
