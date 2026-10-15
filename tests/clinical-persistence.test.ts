@@ -84,10 +84,20 @@ test("weekly visit drafts include the complete editable workflow", () => {
 test("critical saves are serialized and failures reload authoritative PostgreSQL state", () => {
   const dashboard = read("app/DashboardClient.tsx");
   assert.match(dashboard, /const saveQueue = useRef<Promise<unknown>>/);
+  assert.match(dashboard, /const latestData = useRef<AppData>/);
+  assert.match(dashboard, /const saveRevision = useRef\(0\)/);
+  assert.match(dashboard, /typeof next === "function" \? next\(latestData\.current\) : next/);
   assert.match(dashboard, /\.then\(\(\) => clinicalDataApi\.save\(stamped\)\)/);
-  assert.match(dashboard, /setData0\(migrateData\(server\.state\)\)/);
+  assert.match(dashboard, /latestData\.current = confirmed/);
   assert.match(dashboard, /reloaded last confirmed data/);
   assert.match(dashboard, /The visit was not finalized because it could not be saved securely/);
+});
+
+test("glucose edits and deletions compose from the latest optimistic state", () => {
+  const dashboard = read("app/DashboardClient.tsx");
+  assert.match(dashboard, /save\(\(current\) => \(\{\s*\.\.\.current,\s*readings: current\.readings\.map/);
+  assert.match(dashboard, /readings: current\.readings\.filter\(\(r\) => r\.id !== id\)/);
+  assert.doesNotMatch(dashboard, /setData0\(stamped\);\s*setSaved\("✓ All changes saved"\)/);
 });
 
 test("portal imports use authoritative server rows and one transaction", () => {

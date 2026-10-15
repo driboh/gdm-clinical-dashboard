@@ -521,6 +521,8 @@ export default function Home() {
     [detailVisit, setDetailVisit] = useState<string | null>(null),
     [query, setQuery] = useState("");
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const latestData = useRef<AppData>(demoData);
+  const saveRevision = useRef(0);
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -532,6 +534,7 @@ export default function Home() {
           await clinicalDataApi.save(initial);
         }
         if (active) {
+          latestData.current = initial;
           setData0(initial);
           setDrafts(server.drafts || {});
         }
@@ -553,7 +556,11 @@ export default function Home() {
     const refresh = async () => {
       try {
         const snapshot = await patientPortalApi.snapshot();
-        if (active) setData0((current) => mergePortalSnapshot(current, snapshot));
+        if (active) setData0((current) => {
+          const merged = mergePortalSnapshot(current, snapshot);
+          latestData.current = merged;
+          return merged;
+        });
       } catch {
         if (active) setSaved("Shared portal database unavailable");
       }
@@ -562,8 +569,12 @@ export default function Home() {
     const timer = window.setInterval(refresh, 30000);
     return () => { active = false; window.clearInterval(timer); };
   }, [ready]);
-  const save = async (next: AppData) => {
-    const stamped = stampFinalizedVisits(next);
+  const save = async (next: AppData | ((current: AppData) => AppData)) => {
+    const stamped = stampFinalizedVisits(
+      typeof next === "function" ? next(latestData.current) : next,
+    );
+    latestData.current = stamped;
+    const revision = ++saveRevision.current;
     setData0(stamped);
     setSaved("Saving…");
     const persistence = saveQueue.current
@@ -572,17 +583,22 @@ export default function Home() {
     saveQueue.current = persistence;
     try {
       await persistence;
-      setData0(stamped);
-      setSaved("✓ All changes saved");
+      if (revision === saveRevision.current) setSaved("✓ All changes saved");
       return stamped;
     } catch (error) {
-      try {
-        const server = await clinicalDataApi.load();
-        if (server.state) setData0(migrateData(server.state));
-      } catch {
-        // Preserve the visible failure state when the authoritative reload also fails.
+      if (revision === saveRevision.current) {
+        try {
+          const server = await clinicalDataApi.load();
+          if (server.state) {
+            const confirmed = migrateData(server.state);
+            latestData.current = confirmed;
+            setData0(confirmed);
+          }
+        } catch {
+          // Preserve the visible failure state when the authoritative reload also fails.
+        }
+        setSaved("Secure save failed — reloaded last confirmed data");
       }
-      setSaved("Secure save failed — reloaded last confirmed data");
       throw error;
     }
   };
@@ -1159,7 +1175,7 @@ function PatientPage({
   p: Patient;
   tab: string;
   setTab: (x: string) => void;
-  save: (d: AppData) => void;
+  save: (d: AppData | ((current: AppData) => AppData)) => void;
   edit: () => void;
   newVisit: () => void;
   report: () => void;
@@ -1435,7 +1451,7 @@ function Glucose({
   data: AppData;
   p: Patient;
   readings: Reading[];
-  save: (d: AppData) => void;
+  save: (d: AppData | ((current: AppData) => AppData)) => void;
 }) {
   const [range, setRange] = useState("7"),
     [editing, setEditing] = useState<string | null>(null);
@@ -1444,9 +1460,9 @@ function Glucose({
       alert("A glucose row already exists for this date. Edit that row instead.");
       return;
     }
-    save({
-      ...data,
-      readings: data.readings.map((r) =>
+    save((current) => ({
+      ...current,
+      readings: current.readings.map((r) =>
         r.id === id
           ? {
               ...r,
@@ -1458,11 +1474,14 @@ function Glucose({
             }
           : r,
       ),
-    });
+    }));
   };
   const del = (id: string) => {
     if (confirm("Delete this glucose day?"))
-      save({ ...data, readings: data.readings.filter((r) => r.id !== id) });
+      save((current) => ({
+        ...current,
+        readings: current.readings.filter((r) => r.id !== id),
+      }));
   };
   const add = () => {
     const date = localDateToday();
@@ -1482,7 +1501,7 @@ function Glucose({
       dinner: null,
       notes: "",
     };
-    save({ ...data, readings: [...data.readings, r] });
+    save((current) => ({ ...current, readings: [...current.readings, r] }));
     setEditing(r.id);
   };
   const addWeek = () => {
@@ -1505,7 +1524,21 @@ function Glucose({
           notes: "",
         });
     }
-    if (rows.length) save({ ...data, readings: [...data.readings, ...rows] });
+    if (rows.length)
+      save((current) => {
+        const currentDates = new Set(
+          current.readings
+            .filter((reading) => reading.patientId === p.id)
+            .map((reading) => reading.date),
+        );
+        return {
+          ...current,
+          readings: [
+            ...current.readings,
+            ...rows.filter((row) => !currentDates.has(row.date)),
+          ],
+        };
+      });
   };
   const s = analyze(readings, data.settings),
     meal =
