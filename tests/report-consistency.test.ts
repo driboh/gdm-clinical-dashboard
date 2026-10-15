@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {buildReportModel,maternalLine,validateVisitConsistency} from "../app/lib/reportModel.ts";
+import {buildReportModel,maternalLine,patientForNewReport,validateVisitConsistency} from "../app/lib/reportModel.ts";
 import {buildClinicalSummary,reportPlanItems} from "../app/lib/reportSummary.ts";
 import {applyRegimenChange,formatMedicationChange,parseRecordedMedicationChange,repairLegacyMockVisitChronology,snapshotActiveTherapy,updateActiveMedicationList} from "../app/lib/medicationTimeline.ts";
 import type {Medication,Patient,Reading,Settings,Visit} from "../app/lib/data.ts";
@@ -19,6 +19,14 @@ test("C: gestational age is identical in every generated section",()=>{const mod
 test("D: report finalization flags, signature, and footer are mutually consistent",()=>{const draft=buildReportModel(patient,{...visit,status:"Draft"},readings,[],settings),finalized=buildReportModel(patient,visit,readings,[],settings),revised=buildReportModel(patient,{...visit,status:"Refinalized",version:2,revisionReason:"Corrected documentation"},readings,[],settings);assert.equal(draft.isDraft,true);assert.equal(draft.isFinalized,false);assert.equal(draft.showSignature,false);assert.match(draft.footerText,/Draft/);assert.equal(finalized.isDraft,false);assert.equal(finalized.isFinalized,true);assert.equal(finalized.showSignature,true);assert.doesNotMatch(finalized.footerText,/Draft/);assert.equal(revised.isFinalized,true);assert.equal(revised.isRevised,true);assert.equal(revised.showSignature,true);assert.doesNotMatch(revised.footerText,/Draft/)});
 
 test("E: maternal findings render each measurement once",()=>{const line=maternalLine(patient,visit);for(const token of ["Weight 145 lb","BP 119/81","HR 77","Edema: None"])assert.equal(line.split(token).length-1,1);assert.equal((line.match(/(?:^| · )Weight 145 lb(?: · |$)/g)||[]).length,1)});
+
+test("new reports use corrected demographics instead of an old visit snapshot",()=>{
+ const corrected={...patient,edd:"2026-11-02",referringOb:"Dr. Corrected"};
+ const oldVisit={...visit,patientSnapshot:{firstName:patient.firstName,lastName:patient.lastName,mrn:patient.mrn,dob:patient.dob,edd:"1991-11-02",gravida:patient.gravida,para:patient.para,referringOb:"Dr. Old",obPractice:patient.obPractice,site:patient.site,heightFeet:patient.heightFeet,heightInches:patient.heightInches,preWeight:patient.preWeight,pregnancyType:patient.pregnancyType}};
+ const reportPatient=patientForNewReport(corrected,oldVisit);
+ assert.equal(reportPatient.edd,"2026-11-02");
+ assert.equal(reportPatient.referringOb,"Dr. Corrected");
+});
 
 test("finalization validation reports material inconsistencies",()=>{const warnings=validateVisitConsistency(patient,{...visit,assessment:"",plan:""},[],[] as Medication[],settings);assert.ok(warnings.some(x=>x.includes("Gestational age")));assert.ok(warnings.some(x=>x.includes("No glucose")));assert.ok(warnings.some(x=>x.includes("Assessment")));assert.ok(warnings.some(x=>x.includes("Plan")));assert.ok(warnings.some(x=>x.includes("duplicated")))});
 

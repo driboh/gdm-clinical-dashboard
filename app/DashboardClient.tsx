@@ -49,7 +49,11 @@ import { migrateData } from "./lib/migrate";
 import { WeeklySnapshot } from "./components/WeeklySnapshot";
 import { GdmClinicalSummary } from "./components/GdmClinicalSummary";
 import { buildClinicalSummary, reportPlanItems } from "./lib/reportSummary";
-import { buildReportModel, validateVisitConsistency } from "./lib/reportModel";
+import {
+  buildReportModel,
+  patientForNewReport,
+  validateVisitConsistency,
+} from "./lib/reportModel";
 import {
   applyRegimenChange,
   formatMedicationChange,
@@ -5542,27 +5546,14 @@ function ReportViewPdf({
     latestVersion = selectedIsCurrent
       ? selectedReport?.visitVersion || latestVisit?.version || 1
       : latestVisit?.version || 1;
-  const existing = selectedIsCurrent
-    ? selectedReport
-    : data.reports.find(
-        (r) =>
-          r.patientId === p.id &&
-          r.visitId === latestVisit?.id &&
-          (r.visitVersion || r.snapshot?.visit?.version || 1) ===
-            latestVersion &&
-          r.snapshot?.schemaVersion === 4,
-      );
+  // Opening a saved report preserves its historical snapshot. Generating a new
+  // report uses current patient demographics so corrected identifiers, dates,
+  // and referring-provider details are not inherited from an older visit.
+  const existing = selectedIsCurrent ? selectedReport : undefined;
   const snapshotRef = useRef<ReportSnapshot | null>(null);
   if (!snapshotRef.current) {
-    const frozenPatient = latestVisit?.patientSnapshot
-      ? {
-          ...p,
-          ...latestVisit.patientSnapshot,
-          currentWeight: latestVisit.weight || p.currentWeight,
-        }
-      : p;
     snapshotRef.current = existing?.snapshot || {
-      patient: clone(frozenPatient),
+      patient: clone(patientForNewReport(p, latestVisit)),
       visit: latestVisit ? clone(latestVisit) : undefined,
       readings: clone(
         latestVisit?.glucoseSnapshot ||

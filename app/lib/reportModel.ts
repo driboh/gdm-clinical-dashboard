@@ -5,6 +5,10 @@ import {localDateToday} from "./dateOnly.ts";
 
 export type ReportModel=ReturnType<typeof buildReportModel>;
 
+export function patientForNewReport(current:Patient,visit?:Visit):Patient{
+ return {...current,currentWeight:visit?.weight||current.currentWeight};
+}
+
 const categoryNames={fasting:"Fasting",breakfast:"Breakfast",lunch:"Lunch",dinner:"Dinner"} as const;
 const keys=Object.keys(categoryNames) as (keyof typeof categoryNames)[];
 
